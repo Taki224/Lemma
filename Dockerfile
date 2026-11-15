@@ -70,12 +70,14 @@ COPY --from=frontend-build /workspace/frontend/dist /opt/lemma/frontend/dist
 
 RUN pip install --no-cache-dir /opt/lemma/backend \
     && mkdir -p /data \
-    && chown -R app:app /data /opt/lemma
+    && chown -R app:app /data /opt/lemma \
+    && printf '#!/bin/sh\nset -e\nDATA_PATH="${DATA_DIR:-/data}"\nmkdir -p "$DATA_PATH"\nif ! setpriv --reuid=1000 --regid=1000 --clear-groups test -w "$DATA_PATH" \\\n   || { [ -e "$DATA_PATH/config" ] && ! setpriv --reuid=1000 --regid=1000 --clear-groups test -w "$DATA_PATH/config"; }; then\n    chown -R 1000:1000 "$DATA_PATH"\nfi\nexec setpriv --reuid=1000 --regid=1000 --clear-groups env HOME=/home/app "$@"\n' > /usr/local/bin/docker-entrypoint.sh \
+    && chmod 0755 /usr/local/bin/docker-entrypoint.sh
 
 VOLUME ["/data"]
 EXPOSE 8080
 
-USER app
 WORKDIR /opt/lemma/backend
 
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
 CMD ["uvicorn", "app.main:create_app", "--factory", "--host", "0.0.0.0", "--port", "8080"]
