@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import asyncio
 import base64
+import logging
 import secrets as pysecrets
 import threading
 import time
@@ -14,6 +16,8 @@ from app.ai.model_registry import ModelRegistry
 from app.config import AppSettings
 from app.config_secrets import SecretsStore
 from app.db import DatabaseManager
+
+logger = logging.getLogger(__name__)
 
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 
@@ -32,6 +36,10 @@ class SpendCapExceededError(RuntimeError):
 
 class OpenRouterError(RuntimeError):
     """Raised when OpenRouter API fails or API key is missing."""
+
+
+class OpenRouterFinishError(OpenRouterError):
+    """Raised when OpenRouter terminates a completion with finish_reason='error'."""
 
 
 @dataclass(frozen=True)
@@ -449,37 +457,49 @@ class OpenRouterClient:
                     "OpenRouter API key is not configured in /data/config/secrets.yaml."
                 )
 
-            try:
-                if self._http_client is not None:
-                    resp = await self._http_client.post(
-                        "/chat/completions",
-                        json=payload,
-                        headers=headers,
-                    )
-                else:
-                    async with httpx.AsyncClient(
-                        base_url=OPENROUTER_BASE_URL, timeout=120.0
-                    ) as client:
-                        resp = await client.post(
+            for attempt in range(2):
+                try:
+                    if self._http_client is not None:
+                        resp = await self._http_client.post(
                             "/chat/completions",
                             json=payload,
                             headers=headers,
                         )
-            except httpx.HTTPError as exc:
-                raise OpenRouterError(f"OpenRouter request failed: {exc}") from exc
+                    else:
+                        async with httpx.AsyncClient(
+                            base_url=OPENROUTER_BASE_URL, timeout=120.0
+                        ) as client:
+                            resp = await client.post(
+                                "/chat/completions",
+                                json=payload,
+                                headers=headers,
+                            )
+                except httpx.HTTPError as exc:
+                    raise OpenRouterError(f"OpenRouter request failed: {exc}") from exc
 
-            if resp.status_code >= 400:
-                raise OpenRouterError(
-                    f"OpenRouter completion failed with status {resp.status_code}: {resp.text}"
-                )
+                if resp.status_code >= 400:
+                    raise OpenRouterError(
+                        f"OpenRouter completion failed with status {resp.status_code}: {resp.text}"
+                    )
 
-            try:
-                data = resp.json()
-            except ValueError as exc:
-                raise OpenRouterError("OpenRouter returned invalid JSON.") from exc
-            content_text, actual_prompt, actual_completion, usage, finish_reason = (
-                _parse_completion_payload(data, est_prompt_tokens)
-            )
+                try:
+                    data = resp.json()
+                except ValueError as exc:
+                    raise OpenRouterError("OpenRouter returned invalid JSON.") from exc
+                try:
+                    content_text, actual_prompt, actual_completion, usage, finish_reason = (
+                        _parse_completion_payload(data, est_prompt_tokens)
+                    )
+                    break
+                except OpenRouterFinishError:
+                    if attempt == 0:
+                        logger.warning(
+                            "Retrying OpenRouter completion for model=%s after finish_reason='error'",
+                            model,
+                        )
+                        await asyncio.sleep(0.25)
+                        continue
+                    raise
             if "cost" in usage or "total_cost" in usage:
                 actual_usd = float(usage.get("cost") or usage.get("total_cost") or 0.0)
             else:
@@ -646,7 +666,15 @@ def _parse_completion_payload(
     if isinstance(raw_reason, str) and raw_reason.strip():
         finish_reason = raw_reason.strip().lower()
     if finish_reason == "error":
-        raise OpenRouterError("Model completion terminated with finish_reason='error'.")
+        logger.warning(
+            "OpenRouter completion terminated with finish_reason='error' "
+            "(id=%s, model=%s, provider=%s, native_finish_reason=%s)",
+            data.get("id"),
+            data.get("model"),
+            data.get("provider"),
+            first_choice.get("native_finish_reason"),
+        )
+        raise OpenRouterFinishError("Model completion terminated with finish_reason='error'.")
 
     usage = data.get("usage") or {}
     if not isinstance(usage, dict):
