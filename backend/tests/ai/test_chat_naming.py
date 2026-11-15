@@ -181,7 +181,7 @@ async def test_run_agent_turn_persists_chat_title_when_turn_errors(tmp_path: Pat
                 },
             )
         main_calls += 1
-        if main_calls == 1:
+        if main_calls <= 2:
             return httpx.Response(
                 200,
                 json={
