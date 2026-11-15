@@ -1,9 +1,6 @@
 services:
   workspace:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    image: lemma-workspace:latest
+    image: taki224/lemma:latest
     container_name: lemma-workspace
     restart: unless-stopped
     ports:
