@@ -37,7 +37,7 @@ Lemma is a single-tenant, self-hosted alternative to cloud AI LaTeX editors. It 
 
 ### Docker Compose (Recommended)
 
-The Docker image bundles Node-built frontend assets, the FastAPI backend, upstream TeX Live, and the `bubblewrap` sandbox.
+The prebuilt multi-architecture Docker image (`taki224/lemma:latest`, supporting `linux/amd64` and `linux/arm64` for macOS, Windows, Linux, and Raspberry Pi) bundles Node-built frontend assets, the FastAPI backend, upstream TeX Live, and the `bubblewrap` sandbox.
 
 1. Copy the example environment file and set your password (and optional API keys):
 
@@ -45,11 +45,13 @@ The Docker image bundles Node-built frontend assets, the FastAPI backend, upstre
    cp .env.example .env
    ```
 
-2. Build and start the container:
+2. Pull and start the container:
 
    ```bash
-   docker compose up --build -d
+   docker compose up -d
    ```
+
+   To update to the latest published image later, run `docker compose pull && docker compose up -d`. (If you prefer to build from source instead, run `docker build -t taki224/lemma:latest .`.)
 
 3. Open [http://localhost:8080](http://localhost:8080) and sign in with `WORKSPACE_PASSWORD` (default: `password`).
 
