@@ -10,7 +10,7 @@ import pytest
 from app.ai.chat_naming import parse_chat_title
 from app.ai.chat_service import ChatService
 from app.ai.model_registry import ModelRegistry, build_seed_models
-from app.ai.openrouter import DEFAULT_FALLBACK_MODELS, OpenRouterClient
+from app.ai.openrouter import DEFAULT_FALLBACK_MODELS, OpenRouterClient, OpenRouterError
 from app.ai.prompts import PromptsManager
 from app.config import bootstrap_data_dir
 from app.config_secrets import SecretsStore
@@ -151,3 +151,91 @@ async def test_run_agent_turn_names_chat_and_ignores_naming_failure(tmp_path: Pa
     )
     assert turn.reply == "Main assistant reply."
     assert failing_service.list_chats(p2.project_id)[0].title == "Original prompt title"
+
+
+@pytest.mark.asyncio
+async def test_run_agent_turn_persists_chat_title_when_turn_errors(tmp_path: Path) -> None:
+    settings = bootstrap_data_dir(tmp_path / "data")
+    settings.privacy_consent_accepted = True
+    settings.chat_naming_enabled = True
+    settings.chat_naming_model = "openai/gpt-4o"
+    db = DatabaseManager(db_path=settings.db_path, backup_dir=settings.backups_dir)
+    db.initialize()
+    secrets = SecretsStore(secrets_path=settings.secrets_yaml_path)
+    secrets.update_secrets({"openrouter_api_key": "sk-or-v1-test-naming-key"})
+    prompts = PromptsManager(prompts_path=settings.prompts_yaml_path)
+    project_service = ProjectService(data_dir=settings.data_dir, db=db)
+
+    main_calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal main_calls
+        body = json.loads(request.content.decode("utf-8"))
+        system_msg = (body.get("messages") or [{}])[0].get("content", "")
+        if "short, descriptive title" in system_msg:
+            return httpx.Response(
+                200,
+                json={
+                    "choices": [{"message": {"content": "Identifying the Main Research Question"}}],
+                    "usage": {"prompt_tokens": 20, "completion_tokens": 5},
+                },
+            )
+        main_calls += 1
+        if main_calls == 1:
+            return httpx.Response(
+                200,
+                json={
+                    "choices": [{"message": {"content": ""}, "finish_reason": "error"}],
+                    "usage": {"prompt_tokens": 40, "completion_tokens": 0},
+                },
+            )
+        return httpx.Response(
+            200,
+            json={
+                "choices": [{"message": {"content": "Main assistant reply."}}],
+                "usage": {"prompt_tokens": 40, "completion_tokens": 10},
+            },
+        )
+
+    http_client = httpx.AsyncClient(
+        transport=httpx.MockTransport(handler),
+        base_url="https://openrouter.ai/api/v1",
+    )
+    registry = ModelRegistry(db)
+    registry.seed_if_needed(build_seed_models([], DEFAULT_FALLBACK_MODELS))
+    openrouter = OpenRouterClient(
+        db=db,
+        secrets=secrets,
+        settings=settings,
+        registry=registry,
+        http_client=http_client,
+    )
+    chat_service = ChatService(
+        db=db,
+        project_service=project_service,
+        prompts_manager=prompts,
+        openrouter=openrouter,
+        settings=settings,
+    )
+    project = project_service.create_project("Proposal")
+
+    with pytest.raises(OpenRouterError, match="finish_reason='error'"):
+        await chat_service.run_agent_turn(
+            project_id=project.project_id,
+            chat_id="chat_err_1",
+            user_prompt="what is the main research question",
+            model="openai/gpt-4o",
+        )
+
+    chats = chat_service.list_chats(project.project_id)
+    assert chats[0].title == "Identifying the Main Research Question"
+
+    # Retrying in the same chat preserves the generated title.
+    turn = await chat_service.run_agent_turn(
+        project_id=project.project_id,
+        chat_id="chat_err_1",
+        user_prompt="what is the main research question",
+        model="openai/gpt-4o",
+    )
+    assert turn.reply == "Main assistant reply."
+    assert chat_service.list_chats(project.project_id)[0].title == "Identifying the Main Research Question"
