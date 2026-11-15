@@ -397,7 +397,7 @@ export function LatexEditor({
     const lineObj = doc.line(targetLine);
     viewRef.current.dispatch({
       selection: { anchor: lineObj.from, head: lineObj.from },
-      scrollIntoView: true,
+      effects: EditorView.scrollIntoView(lineObj.from, { y: "start" }),
     });
     if (!isInitialJumpRef.current) flashLine(viewRef.current, targetLine);
     isInitialJumpRef.current = false;

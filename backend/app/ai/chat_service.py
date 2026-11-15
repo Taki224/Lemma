@@ -1455,6 +1455,9 @@ class ChatService:
 
             user_msg_id, assistant_msg_id = await asyncio.to_thread(persist_messages)
             await self._finish_chat_naming_task(project_id, chat_id, naming_task)
+        except Exception:
+            await self._finish_chat_naming_task(project_id, chat_id, naming_task)
+            raise
         finally:
             self._cancel_task_if_pending(naming_task)
 
@@ -1506,6 +1509,9 @@ class ChatService:
                 on_event=on_event,
                 naming_task=naming_task,
             )
+        except Exception:
+            await self._finish_chat_naming_task(project_id, chat_id, naming_task)
+            raise
         finally:
             self._cancel_task_if_pending(naming_task)
 
