@@ -5,7 +5,7 @@ import {
   type CompletionResult,
   type CompletionSource,
 } from "@codemirror/autocomplete";
-import type { Extension } from "@codemirror/state";
+import { EditorState, type Extension } from "@codemirror/state";
 import { formatBibDetail, type BibEntry } from "../utils/bibParser";
 
 const CITE_BEFORE_CURSOR_RE =
@@ -138,10 +138,14 @@ export function citationAutocompleteExtension(
   getEntries: () => BibEntry[],
   isDisabled?: () => boolean
 ): Extension {
-  return autocompletion({
-    override: [createCitationCompletionSource(getEntries, isDisabled)],
-    activateOnTyping: true,
-    maxRenderedOptions: 50,
-    icons: false,
-  });
+  return [
+    EditorState.languageData.of(() => [
+      { autocomplete: createCitationCompletionSource(getEntries, isDisabled) },
+    ]),
+    autocompletion({
+      activateOnTyping: true,
+      maxRenderedOptions: 50,
+      icons: false,
+    }),
+  ];
 }
