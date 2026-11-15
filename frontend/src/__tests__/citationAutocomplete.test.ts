@@ -1,8 +1,10 @@
 import { EditorState } from "@codemirror/state";
 import { CompletionContext } from "@codemirror/autocomplete";
+import { latex } from "codemirror-lang-latex";
 import { describe, expect, test } from "vitest";
 import { formatBibDetail, parseBibFile, type BibEntry } from "../utils/bibParser";
 import {
+  citationAutocompleteExtension,
   createCitationCompletionSource,
   matchCitationContext,
 } from "../components/citationAutocomplete";
@@ -158,5 +160,24 @@ describe("createCitationCompletionSource", () => {
 
   test("returns null when disabled", async () => {
     expect(await completeAtEnd("\\cite{", true)).toBeNull();
+  });
+
+  test("composes with latex({ enableAutocomplete: false }) without config merge conflict", async () => {
+    const doc = "\\cite{";
+    const state = EditorState.create({
+      doc,
+      extensions: [
+        latex({ enableAutocomplete: false }),
+        citationAutocompleteExtension(() => sampleEntries),
+      ],
+    });
+    const sources = state.languageDataAt<ReturnType<typeof createCitationCompletionSource>>(
+      "autocomplete",
+      doc.length
+    );
+    expect(sources.length).toBeGreaterThanOrEqual(2);
+    const context = new CompletionContext(state, doc.length, false);
+    const results = (await Promise.all(sources.map((src) => src(context)))).filter(Boolean);
+    expect(results.some((r) => r!.options.some((o) => o.label === "vaswani2017"))).toBe(true);
   });
 });
