@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Lemma">
+  <rect width="64" height="64" rx="14" fill="#161617"/>
+  <rect x="0.75" y="0.75" width="62.5" height="62.5" rx="13.25" fill="none" stroke="#303033" stroke-width="1.5"/>
+  <path d="M15 13h9v28h14v9H15z" fill="#f4f4f5"/>
+  <rect x="41" y="41" width="9" height="9" fill="#9dccb0"/>
+</svg>

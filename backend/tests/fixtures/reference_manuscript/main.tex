@@ -1,0 +1,24 @@
+\documentclass[11pt,a4paper]{academic-manuscript}
+
+\title{Grounded Academic Writing with Sandboxed Verification and Citation Integrity}
+\author{Jordan Taylor}
+\date{October 2026}
+\manuscriptadvisor{Prof.\ Dr.\ Samira Patel}
+
+\begin{document}
+
+\makemanuscripttitle
+
+\begin{abstract}
+Academic writing environments increasingly integrate large language models to assist with literature synthesis and technical drafting. However, unverified generative drafting introduces severe threats to scholarly integrity, including fabricated bibliographic keys, verbatim text overlap, and accidental mutation of curated reference libraries \cite{vaswani2017attention,lewis2020retrieval}. This manuscript presents a deterministic verification architecture for LaTeX documents that combines sandboxed compilation, citation key validation, and n-gram overlap auditing.
+\end{abstract}
+
+\tableofcontents
+
+\input{chapters/introduction.tex}
+\input{chapters/methodology.tex}
+
+\bibliographystyle{plain}
+\bibliography{references}
+
+\end{document}

@@ -1,0 +1,16 @@
+{
+  "name": "lemma-workspace",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Lemma — Self-Hosted AI LaTeX Workspace",
+  "scripts": {
+    "dev": "./run-local.sh dev",
+    "dev:backend": "./run-local.sh backend",
+    "dev:frontend": "./run-local.sh frontend",
+    "build": "./run-local.sh build",
+    "start": "./run-local.sh start",
+    "test": "./run-local.sh test",
+    "test:backend": "./run-local.sh test-backend",
+    "test:frontend": "./run-local.sh test-frontend"
+  }
+}

@@ -1,0 +1,21 @@
+services:
+  workspace:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: lemma-workspace:latest
+    container_name: lemma-workspace
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./data:/data
+    environment:
+      - DATA_DIR=/data
+      - WORKSPACE_PASSWORD=${WORKSPACE_PASSWORD:-password}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
+      - ZOTERO_API_KEY=${ZOTERO_API_KEY:-}
+      - ZOTERO_LIBRARY_ID=${ZOTERO_LIBRARY_ID:-}
+      - UNPAYWALL_EMAIL=${UNPAYWALL_EMAIL:-}
+      - COMPILE_TIMEOUT_SECONDS=${COMPILE_TIMEOUT_SECONDS:-60}
+      - COMPILE_MEMORY_LIMIT_MB=${COMPILE_MEMORY_LIMIT_MB:-1024}

@@ -1,0 +1,27 @@
+\chapter{Introduction}
+\label{chap:introduction}
+
+Modern scientific publishing relies on reproducible typesetting pipelines and verifiable bibliographic provenance. Since the introduction of the Transformer architecture \cite{vaswani2017attention}, neural language models have demonstrated strong fluency across technical domains. Yet fluency alone is insufficient for peer-reviewed manuscripts where every empirical claim must map to an auditable primary source \cite{lewis2020retrieval}.
+
+\section{Motivation and Problem Statement}
+\label{sec:motivation}
+
+When researchers draft manuscripts using general-purpose conversational interfaces, three failure modes arise repeatedly in practice:
+
+\begin{enumerate}
+  \item Hallucinated citations that look plausible in author-year format but do not resolve to any Digital Object Identifier (DOI) in Crossref or Semantic Scholar \cite{ammar2018construction}.
+  \item Unintended verbatim copying of eight or more consecutive words from source abstracts or full-text PDFs without quotation marks.
+  \item Destructive synchronization loops that overwrite or delete verified entries inside external reference managers such as Zotero.
+\end{enumerate}
+
+\subsection{Research Objectives}
+\label{subsec:objectives}
+
+To address these challenges, we formulate a strict separation between staged candidate literature and verified project bibliographies \cite{knuth1984texbook,lamport1994latex}. Specifically, any newly discovered reference remains in an expiring staging repository until the author explicitly accepts the corresponding inline diff hunk inside the LaTeX editor.
+
+\begin{equation}
+  \label{eq:grounding_ratio}
+  G(\mathcal{C}) = \frac{|\{c \in \mathcal{C} : \text{verified}(c, \mathcal{B}) = 1\}|}{|\mathcal{C}|} = 1.0
+\end{equation}
+
+Equation~\eqref{eq:grounding_ratio} requires that the grounding ratio $G(\mathcal{C})$ across all cited keys $\mathcal{C}$ in a proposed edit equals unity against the union of verified bibliography $\mathcal{B}$ and explicitly staged candidates.

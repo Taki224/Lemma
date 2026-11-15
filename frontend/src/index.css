@@ -1,0 +1,5429 @@
+/* Academic workspace — dark editor, light compiled page. */
+
+:root {
+  --bg-app: #0c0c0d;
+  --bg-primary: #161617;
+  --bg-secondary: #232325;
+  --bg-tertiary: #2a2a2d;
+  --bg-elevated: #303033;
+  --bg-hover: #38383c;
+  --bg-well: #0e0e10;
+  --bg-editor: #151516;
+  --bg-composer: #1e1e20;
+  --bg-pdf-chrome: #ffffff;
+  --bg-pdf-stage: #f3f3f4;
+  --bg-paper: #ffffff;
+  --bg-pill-dark: #1d1d1f;
+
+  --border-subtle: rgba(255, 255, 255, 0.06);
+  --border-color: rgba(255, 255, 255, 0.1);
+  --border-card: rgba(255, 255, 255, 0.08);
+  --border-hover: rgba(255, 255, 255, 0.18);
+  --border-focus: #b7bdd4;
+  --border-light: #e6e6e9;
+
+  --text-primary: #f4f4f5;
+  --text-secondary: #c8c8ce;
+  --text-muted: #8e8e98;
+  --text-dim: #6c6c76;
+  --text-on-light: #1c1c1f;
+  --text-on-light-muted: #5f5f69;
+
+  --accent-blue: #f4f4f5;
+  --accent-blue-hover: #ffffff;
+  --accent-blue-subtle: rgba(244, 244, 245, 0.08);
+  --on-accent: #16161a;
+  --tools-bg: #1b2747;
+  --tools-bg-hover: #24345e;
+  --tools-text: #e3e9ff;
+  --syntax-command: #e3c07a;
+  --syntax-string: #9dccb0;
+  --syntax-math: #c4b2c8;
+  --accent-cyan: #9bb8b0;
+  --accent-green: #3d8f6e;
+  --accent-green-subtle: rgba(157, 204, 176, 0.14);
+  --accent-green-text: #9dccb0;
+  --accent-amber: #d4b483;
+  --accent-amber-subtle: rgba(212, 180, 131, 0.14);
+  --flash-yellow: rgba(212, 180, 131, 0.38);
+  --accent-red: #c45c52;
+  --accent-red-subtle: rgba(224, 154, 146, 0.14);
+  --accent-red-text: #e7b1aa;
+  --accent-purple: #c4b2c8;
+
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 12px;
+  --radius-card: 14px;
+
+  --shadow-sm: 0 1px 0 rgba(0, 0, 0, 0.25);
+  --shadow-md: 0 10px 28px rgba(0, 0, 0, 0.28);
+  --shadow-lg: 0 18px 44px rgba(0, 0, 0, 0.36);
+  --shadow-glow: 0 0 0 1px var(--border-focus);
+  --shadow-page: 0 1px 2px rgba(0, 0, 0, 0.06), 0 6px 24px rgba(0, 0, 0, 0.08);
+  --shadow-pill: 0 6px 20px rgba(0, 0, 0, 0.22);
+
+  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", "Segoe UI", "Helvetica Neue", sans-serif;
+  --font-mono: "IBM Plex Mono", "SF Mono", ui-monospace, monospace;
+}
+
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+html, body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  background: var(--bg-app);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  overflow: hidden;
+}
+
+#root {
+  width: 100%;
+  height: 100%;
+}
+
+/* Custom Scrollbars */
+::-webkit-scrollbar {
+  width: 7px;
+  height: 7px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border-color);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--border-hover);
+}
+
+/* App Shell */
+.lemma-app-shell {
+  display: flex;
+  flex-direction: column;
+  width: 100vw;
+  height: 100vh;
+  background: var(--bg-app);
+  color: var(--text-primary);
+  overflow: hidden;
+}
+
+/* Warning Banner */
+.lemma-http-warning-banner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: var(--accent-amber-subtle);
+  color: var(--accent-amber);
+  padding: 8px 16px;
+  font-size: 12px;
+  font-weight: 500;
+  border-bottom: 1px solid var(--border-subtle);
+  z-index: 50;
+}
+
+/* Loading Screen */
+.lemma-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100vh;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  background: var(--bg-app);
+  gap: 12px;
+}
+
+/* Login Screen */
+.lemma-login-container {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  background: var(--bg-app);
+  padding: 24px;
+}
+
+.lemma-login-card {
+  width: 100%;
+  max-width: 320px;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  padding: 0;
+  box-shadow: none;
+  display: flex;
+  flex-direction: column;
+}
+
+.lemma-login-card h1 {
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  margin: 0 0 20px;
+  color: var(--text-primary);
+  text-align: center;
+}
+
+.lemma-login-card label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  margin-bottom: 6px;
+}
+
+.lemma-login-card input[type="password"] {
+  width: 100%;
+  padding: 9px 12px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  font-size: 13px;
+  outline: none;
+  margin-bottom: 14px;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.lemma-login-card input[type="password"]:focus {
+  border-color: var(--border-focus);
+  box-shadow: var(--shadow-glow);
+}
+
+.lemma-login-card p[role="alert"] {
+  color: var(--accent-red);
+  background: var(--accent-red-subtle);
+  border: 1px solid rgba(239, 68, 68, 0.25);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+  font-size: 12px;
+  margin: 0 0 14px;
+}
+
+.lemma-login-card button[type="submit"] {
+  width: 100%;
+  padding: 10px;
+  background: var(--accent-blue);
+  color: var(--on-accent);
+  border: none;
+  border-radius: var(--radius-md);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s, transform 0.05s;
+}
+
+.lemma-login-card button[type="submit"]:hover {
+  background: var(--accent-blue-hover);
+}
+
+.lemma-login-card button[type="submit"]:active {
+  transform: scale(0.99);
+}
+
+/* Authenticated Workspace Shell */
+.lemma-authenticated-workspace {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  height: 100%;
+  overflow: hidden;
+  position: relative;
+}
+
+/* Tools menu — extra workspace actions live here, off the editor chrome. */
+.lemma-workspace-tools {
+  position: absolute;
+  top: 16px;
+  right: calc(var(--pane-right-w) + 14px);
+  z-index: 260;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+}
+
+.lemma-three-pane-grid:has(> .lemma-right-pane[hidden]) > .lemma-workspace-tools {
+  right: 16px;
+}
+
+.lemma-tools-btn {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: none;
+  background: var(--tools-bg);
+  color: var(--tools-text);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  padding: 6px 10px 6px 12px;
+  border-radius: var(--radius-lg);
+  cursor: pointer;
+  line-height: 1.3;
+  transition: background 0.15s ease;
+}
+
+.lemma-tools-btn::after {
+  content: "";
+  width: 13px;
+  height: 13px;
+  flex: none;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 14 14' fill='none' stroke='%23e3e9ff' stroke-width='1.3'><rect x='1.5' y='1.5' width='4' height='4' rx='1'/><rect x='8.5' y='1.5' width='4' height='4' rx='1'/><rect x='1.5' y='8.5' width='4' height='4' rx='1'/><rect x='8.5' y='8.5' width='4' height='4' rx='1'/></svg>");
+  background-size: contain;
+  background-repeat: no-repeat;
+}
+
+.lemma-tools-btn:hover,
+.lemma-tools-btn[aria-expanded="true"] {
+  background: var(--tools-bg-hover);
+}
+
+.lemma-tools-btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--bg-editor), 0 0 0 3px var(--tools-text);
+}
+
+.lemma-tools-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  width: 292px;
+  max-height: min(70vh, 560px);
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  overflow-y: auto;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-lg);
+}
+
+.lemma-tools-menu[hidden] {
+  display: none;
+}
+
+.lemma-tools-section + .lemma-tools-section {
+  margin-top: 4px;
+  padding-top: 4px;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.lemma-tools-menu-label {
+  margin: 6px 8px 2px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+.lemma-tools-note {
+  margin: 2px 8px 8px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--text-muted);
+}
+
+.lemma-tools-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.lemma-tools-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 7px 8px;
+  background: transparent;
+  color: var(--text-secondary);
+  border: none;
+  border-radius: var(--radius-md);
+  font-family: var(--font-sans);
+  text-align: left;
+  cursor: pointer;
+}
+
+.lemma-tools-item-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  flex: 1;
+}
+
+.lemma-tools-item-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary);
+  line-height: 1.3;
+}
+
+.lemma-tools-item-hint {
+  font-size: 11px;
+  line-height: 1.35;
+  color: var(--text-dim);
+}
+
+.lemma-tools-item:hover {
+  background: var(--bg-hover);
+}
+
+.lemma-tools-item.active {
+  background: var(--accent-blue-subtle);
+}
+
+.lemma-tools-item:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-glow);
+}
+
+.lemma-tools-check {
+  flex: none;
+  font-size: 12px;
+  line-height: 1;
+  color: var(--text-primary);
+}
+
+.lemma-mode-toggle,
+.lemma-pane-toggle,
+.lemma-topbar-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 1px;
+  background: transparent;
+  border: none;
+  padding: 0;
+}
+
+.lemma-pane-toggle {
+  flex-direction: row;
+  gap: 4px;
+  padding: 2px 6px 6px;
+}
+
+.lemma-mode-toggle button,
+.lemma-pane-toggle button,
+.lemma-topbar-actions button {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  background: transparent;
+  color: var(--text-secondary);
+  border: none;
+  border-radius: var(--radius-sm);
+  padding: 6px 8px;
+  font-size: 13px;
+  font-weight: 400;
+  text-align: left;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.lemma-mode-toggle button:hover,
+.lemma-pane-toggle button:hover:not(:disabled),
+.lemma-topbar-actions button:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+
+.lemma-mode-toggle button.active,
+.lemma-pane-toggle button.active,
+.lemma-topbar-actions button.active {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font-weight: 500;
+  box-shadow: none;
+}
+
+.lemma-mode-toggle button:focus-visible,
+.lemma-pane-toggle button:focus-visible,
+.lemma-topbar-actions button:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-glow);
+}
+
+.lemma-pane-toggle button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.lemma-pane-toggle button {
+  flex: 1;
+  justify-content: center;
+  width: auto;
+  text-align: center;
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-secondary);
+}
+
+.lemma-pane-toggle button.active {
+  background: var(--accent-blue-subtle);
+  border-color: var(--border-color);
+  box-shadow: none;
+}
+
+/* Three Pane Workspace Grid */
+.lemma-three-pane-grid {
+  position: relative;
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  height: auto;
+  overflow: hidden;
+  /* Vertical padding only: pane widths are measured from the grid's full width. */
+  padding: 8px 0;
+  background: var(--bg-app);
+}
+
+/* Left Sidebar Pane */
+.lemma-left-pane {
+  width: var(--pane-left-w);
+  flex: 0 0 var(--pane-left-w);
+  min-width: 0;
+  background: var(--bg-app);
+  border-right: none;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.lemma-left-sidebar {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  padding: 6px 10px 4px 12px;
+  gap: 10px;
+  overflow: hidden;
+}
+
+.lemma-sidebar-brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 6px 0;
+}
+
+.lemma-sidebar-brand-icon {
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+  border-radius: var(--radius-md);
+}
+
+.lemma-sidebar-brand-name {
+  font-family: var(--font-sans);
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--text-primary);
+}
+
+/* Project Switcher & Inputs */
+.lemma-project-switcher {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 2px 6px 4px;
+}
+
+.lemma-project-switcher label,
+.lemma-root-tex-setting label {
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--text-muted);
+}
+
+.lemma-project-switcher select {
+  width: 100%;
+  max-width: 100%;
+  height: 34px;
+  padding: 0 30px 0 12px;
+  background-color: transparent;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'><path d='M2.5 4.5 6 8l3.5-3.5' fill='none' stroke='%238e8e98' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'/></svg>");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-xl);
+  font-family: var(--font-sans);
+  font-size: 13.5px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  appearance: none;
+  outline: none;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+
+.lemma-project-switcher select:hover:not(:disabled) {
+  background-color: var(--bg-primary);
+  border-color: var(--border-hover);
+}
+
+.lemma-project-switcher select:focus {
+  border-color: var(--border-focus);
+  box-shadow: var(--shadow-glow);
+}
+
+.lemma-sidebar-back {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 6px;
+  padding: 2px 6px 2px 2px;
+  border: none;
+  border-radius: var(--radius-md);
+  background: none;
+  font-family: var(--font-sans);
+  font-size: 12px;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.lemma-sidebar-back:hover {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+}
+
+.lemma-sidebar-back:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-glow);
+}
+
+.lemma-sidebar-project-name {
+  margin: 2px 4px 0;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lemma-btn-icon {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  line-height: 1;
+}
+
+.lemma-root-tex-setting {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+  padding: 0 2px 0 4px;
+}
+
+.lemma-root-tex-setting label {
+  flex: none;
+}
+
+.lemma-project-switcher .lemma-root-tex-setting select {
+  flex: 1;
+  min-width: 0;
+  height: 26px;
+  padding: 0 24px 0 8px;
+  background-position: right 7px center;
+  border-radius: var(--radius-md);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 400;
+  letter-spacing: 0;
+  text-overflow: ellipsis;
+}
+
+.lemma-project-switcher .lemma-root-tex-setting select:disabled {
+  cursor: default;
+  background-image: none;
+  border-color: transparent;
+  padding-left: 0;
+  color: var(--text-secondary);
+}
+
+.lemma-root-tex-error {
+  margin: 4px 4px 0;
+  font-size: 11px;
+  color: var(--accent-red-text);
+}
+
+.lemma-file-root-badge {
+  flex: none;
+  margin-left: auto;
+  padding: 0 5px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  font-size: 10px;
+  line-height: 15px;
+  color: var(--text-muted);
+}
+
+/* Sidebar Tablist */
+.lemma-sidebar-tabs-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 6px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.lemma-sidebar-tab-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex: none;
+}
+
+.lemma-sidebar-icon-btn {
+  position: relative;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  color: var(--text-muted);
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.lemma-sidebar-icon-btn:hover,
+.lemma-sidebar-icon-btn[aria-pressed="true"] {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+}
+
+.lemma-sidebar-icon-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.lemma-sidebar-filter {
+  margin: 0 6px;
+  padding: 6px 8px;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  font-size: 12px;
+  outline: none;
+}
+
+.lemma-new-file-menu-anchor {
+  position: relative;
+  display: inline-flex;
+}
+
+.lemma-new-file-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 20;
+  width: 170px;
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+}
+
+.lemma-new-file-menu .lemma-tools-item {
+  font-size: 13px;
+}
+
+.lemma-new-file-row {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin: 4px 0 6px;
+}
+
+.lemma-new-file-row .lemma-sidebar-filter {
+  font-family: var(--font-mono);
+}
+
+.lemma-new-file-hint {
+  margin: 0 8px;
+  font-size: 10.5px;
+  color: var(--text-dim);
+}
+
+.lemma-file-tree-section .lemma-file-list li {
+  position: relative;
+}
+
+.lemma-file-tree-section .lemma-file-list li > .lemma-file-row {
+  padding-right: 30px;
+}
+
+.lemma-file-tree-section .lemma-file-list li > .lemma-file-more-btn {
+  position: absolute;
+  top: 3px;
+  right: 4px;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  justify-content: center;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  font-weight: 400;
+  opacity: 0;
+}
+
+.lemma-file-tree-section .lemma-file-list li:hover > .lemma-file-more-btn,
+.lemma-file-tree-section .lemma-file-list li.active > .lemma-file-more-btn,
+.lemma-file-tree-section .lemma-file-list li.menu-open > .lemma-file-more-btn,
+.lemma-file-tree-section .lemma-file-list li > .lemma-file-more-btn:focus-visible {
+  opacity: 1;
+}
+
+.lemma-file-tree-section .lemma-file-list li > .lemma-file-more-btn:hover,
+.lemma-file-tree-section .lemma-file-list li > .lemma-file-more-btn[aria-expanded="true"] {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+
+.lemma-file-tree-section .lemma-file-list li.is-drop-target {
+  box-shadow: inset 0 0 0 1px var(--border-focus);
+  background: var(--bg-secondary);
+}
+
+.lemma-file-tree-section.is-drop-target {
+  box-shadow: inset 0 0 0 1px var(--border-focus);
+  border-radius: var(--radius-sm);
+}
+
+.lemma-file-drop-hint {
+  margin: 6px 8px;
+  font-size: 10.5px;
+  color: var(--text-dim);
+}
+
+.lemma-file-rename-row {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 2px 0 4px;
+}
+
+.lemma-file-rename-row .lemma-sidebar-filter {
+  font-family: var(--font-mono);
+}
+
+.lemma-file-row-menu {
+  position: fixed;
+  z-index: 40;
+  width: 180px;
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+}
+
+.lemma-file-row-menu .lemma-tools-item:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.lemma-sidebar-filter:focus {
+  border-color: var(--border-focus);
+  box-shadow: var(--shadow-glow);
+}
+
+.lemma-sidebar-tablist {
+  display: flex;
+  border-bottom: none;
+  background: transparent;
+  border-radius: 0;
+  padding: 0;
+  gap: 14px;
+}
+
+.lemma-sidebar-tablist button {
+  flex: 0 0 auto;
+  padding: 6px 0 8px;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 400;
+  cursor: pointer;
+  transition: color 0.15s;
+}
+
+.lemma-sidebar-tablist button:hover {
+  color: var(--text-primary);
+}
+
+.lemma-sidebar-tablist button.active,
+.lemma-sidebar-tablist button[aria-selected="true"] {
+  background: transparent;
+  color: var(--text-primary);
+  font-weight: 500;
+  box-shadow: inset 0 -1px 0 var(--text-primary);
+}
+
+/* File Tree & Upload */
+.lemma-file-tree-section {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 4px 2px;
+}
+
+.lemma-chats-list-placeholder {
+  flex: 1;
+  min-height: 0;
+  padding: 16px 12px;
+  color: var(--text-muted);
+  font-size: 12.5px;
+}
+
+.lemma-upload-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.lemma-upload-label {
+  font-size: 12px;
+  font-weight: 500;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--text-muted);
+}
+
+.lemma-upload-row input[type="file"] {
+  font-size: 12px;
+  color: var(--text-muted);
+  padding: 0;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  cursor: pointer;
+}
+
+.lemma-upload-row input[type="file"]::-webkit-file-upload-button,
+.lemma-upload-row input[type="file"]::file-selector-button {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  padding: 3px 8px;
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  margin-right: 8px;
+}
+
+.lemma-file-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.lemma-file-list li {
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.lemma-file-list li button {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-lg);
+  color: var(--text-secondary);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.1s ease, color 0.1s ease;
+}
+
+.lemma-file-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.lemma-file-glyph {
+  flex: none;
+  color: var(--text-dim);
+}
+
+.lemma-file-glyph.kind-tex { color: var(--syntax-command); }
+.lemma-file-glyph.kind-bib { color: var(--accent-green-text); }
+.lemma-file-glyph.kind-pdf { color: var(--accent-red-text); }
+.lemma-file-glyph.kind-img { color: var(--accent-cyan); }
+.lemma-file-glyph.kind-dir { color: var(--text-muted); }
+
+.lemma-file-list .lemma-file-list {
+  padding-left: 14px;
+}
+
+.lemma-chat-row-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lemma-chat-row-time {
+  flex-shrink: 0;
+  margin-left: auto;
+  color: var(--text-dim);
+  font-size: 11px;
+}
+
+.lemma-file-list li button:hover {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+}
+
+.lemma-file-list li.active > button {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font-weight: 400;
+}
+
+/* Outline Section */
+.lemma-outline-section {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  border-top: 1px solid var(--border-subtle);
+  padding: 8px 4px 4px;
+  max-height: 40%;
+  overflow: auto;
+  flex: none;
+}
+
+.lemma-outline-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  background: transparent;
+  border: none;
+  padding: 4px 6px;
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 500;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--text-primary);
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+}
+
+.lemma-outline-toggle:hover {
+  color: var(--text-secondary);
+  background: var(--bg-secondary);
+}
+
+.lemma-outline-tree {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.lemma-outline-btn {
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: none;
+  padding: 5px 8px;
+  font-family: var(--font-sans);
+  font-size: 12.5px;
+  color: var(--text-secondary);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lemma-outline-btn:hover {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+}
+
+.lemma-outline-children {
+  list-style: none;
+  padding-left: 12px;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* Candidate Sources Staging Tray */
+.lemma-candidate-tray {
+  margin-top: 0;
+  border-top: 1px solid var(--border-color);
+  background: var(--bg-secondary);
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex: none;
+}
+
+.lemma-candidate-tray-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 0;
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+
+.lemma-candidate-tray-toggle:hover {
+  color: var(--text-primary);
+}
+
+.lemma-candidate-tray-toggle:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-glow);
+  border-radius: var(--radius-md);
+}
+
+.lemma-candidate-tray-chevron {
+  color: var(--text-muted);
+}
+
+.lemma-candidate-tray-subtitle {
+  margin: 0;
+  font-size: 10.5px;
+  color: var(--text-muted);
+  line-height: 1.3;
+}
+
+.lemma-candidate-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.lemma-candidate-card {
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.lemma-candidate-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.lemma-candidate-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.lemma-candidate-key {
+  font-size: 11px;
+  color: var(--accent-blue);
+  font-family: var(--font-mono);
+}
+
+.lemma-candidate-authors {
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.lemma-candidate-ttl {
+  font-size: 10px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.lemma-candidate-meta-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.lemma-candidate-doi {
+  background: var(--bg-elevated);
+  color: var(--text-secondary);
+  padding: 1px 5px;
+  border-radius: var(--radius-sm);
+  font-size: 10px;
+  font-family: var(--font-mono);
+}
+
+.lemma-candidate-badge {
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.lemma-candidate-badge.full-text {
+  background: var(--accent-green-subtle);
+  color: #34d399;
+  border: 1px solid rgba(16, 185, 129, 0.2);
+}
+
+.lemma-candidate-badge.abstract-only {
+  background: var(--accent-amber-subtle);
+  color: #fbbf24;
+  border: 1px solid rgba(245, 158, 11, 0.2);
+}
+
+.lemma-candidate-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 2px;
+}
+
+/* Center Editor Pane */
+.lemma-center-pane {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-editor);
+  border: 1px solid var(--border-card);
+  border-radius: var(--radius-card);
+  position: relative;
+  overflow: hidden;
+}
+
+/* The editor card sits flush against the canvas edge when it is the rightmost pane. */
+.lemma-center-pane:has(~ .lemma-right-pane[hidden]) {
+  margin-right: 8px;
+}
+
+.lemma-latex-editor {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  position: relative;
+}
+
+.lemma-editor-toolbar {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  height: 46px;
+  padding: 0 104px 0 10px;
+  background: transparent;
+  border-bottom: none;
+  user-select: none;
+}
+
+.lemma-active-filename {
+  justify-self: center;
+  font-family: var(--font-sans);
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--text-primary);
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  max-width: 100%;
+  padding: 4px 12px 4px 10px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+}
+
+/* Same document outline as the sidebar's `FileGlyph`. */
+.lemma-active-filename::before {
+  content: "";
+  width: 14px;
+  height: 14px;
+  flex: none;
+  background-color: var(--text-muted);
+  -webkit-mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><path d='M4 1.6h5.1L13 5.4V14.4H4V1.6z M9.1 1.6V5.4H13' fill='none' stroke='black' stroke-width='1.2' stroke-linejoin='round'/></svg>") center / contain no-repeat;
+  mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><path d='M4 1.6h5.1L13 5.4V14.4H4V1.6z M9.1 1.6V5.4H13' fill='none' stroke='black' stroke-width='1.2' stroke-linejoin='round'/></svg>") center / contain no-repeat;
+}
+
+.lemma-editor-actions {
+  justify-self: start;
+}
+
+.lemma-editor-actions .lemma-btn {
+  background: transparent;
+  border-color: transparent;
+  color: var(--text-muted);
+}
+
+.lemma-editor-actions .lemma-btn:hover {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+}
+
+.lemma-editor-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.lemma-editor-sync-status {
+  font-family: var(--font-sans);
+  font-size: 11.5px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 260px;
+}
+
+.lemma-zotero-sync-banner {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 0 16px 8px;
+  padding: 10px 14px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  font-family: var(--font-sans);
+}
+
+.lemma-zotero-sync-banner-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  width: 100%;
+}
+
+.lemma-zotero-sync-banner-text {
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.lemma-zotero-sync-banner-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* General Button Styles */
+.lemma-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 5px 11px;
+  background: transparent;
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+  line-height: 1.4;
+}
+
+.lemma-btn:hover {
+  background: var(--bg-tertiary);
+  border-color: var(--border-hover);
+}
+
+.lemma-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.lemma-btn-primary {
+  background: var(--accent-blue) !important;
+  color: var(--on-accent) !important;
+  border-color: transparent !important;
+}
+
+.lemma-btn-primary:hover {
+  background: var(--accent-blue-hover) !important;
+  border-color: var(--accent-blue-hover) !important;
+}
+
+.lemma-btn-secondary {
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  border-color: var(--border-color);
+}
+
+.lemma-btn-secondary:hover {
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+}
+
+.lemma-btn-success {
+  background: var(--accent-green) !important;
+  color: #ffffff !important;
+  border-color: var(--accent-green) !important;
+}
+
+.lemma-btn-danger {
+  background: var(--accent-red) !important;
+  color: #ffffff !important;
+  border-color: var(--accent-red) !important;
+}
+
+.lemma-btn-xs {
+  padding: 3px 7px;
+  font-size: 11px;
+  border-radius: var(--radius-sm);
+}
+
+.lemma-btn-small {
+  padding: 4px 9px;
+  font-size: 11.5px;
+}
+
+/* CodeMirror Host Container */
+.lemma-cm6-host {
+  flex: 1;
+  height: 100%;
+  min-height: 0;
+  position: relative;
+  overflow: hidden;
+  font-family: var(--font-mono);
+  font-size: 13.5px;
+  background: var(--bg-editor);
+}
+
+.lemma-cm6-host .cm-editor {
+  height: 100%;
+  width: 100%;
+  outline: none;
+}
+
+.lemma-cm6-host .cm-scroller {
+  height: 100%;
+  overflow: auto;
+  font-family: var(--font-mono);
+  font-size: 13.5px;
+  line-height: 1.6;
+  padding-bottom: 120px;
+}
+
+.lemma-cm6-host textarea {
+  width: 100%;
+  height: 100%;
+  background: var(--bg-editor);
+  color: var(--text-primary);
+  border: none;
+  outline: none;
+  padding: 16px;
+  font-family: var(--font-mono);
+  font-size: 13.5px;
+  line-height: 1.65;
+  resize: none;
+}
+
+/* Empty Workspace Prompt */
+.lemma-empty-workspace-prompt {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  height: 100%;
+  padding: 32px;
+  background: var(--bg-editor);
+}
+
+.lemma-empty-workspace-card {
+  max-width: 420px;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  padding: 0;
+  text-align: left;
+  box-shadow: none;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.lemma-empty-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-lg);
+  margin-bottom: 14px;
+}
+
+.lemma-empty-workspace-card h2 {
+  font-size: 19px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--text-primary);
+  margin: 0 0 10px;
+}
+
+.lemma-empty-workspace-card p {
+  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 1.6;
+  margin: 0 0 24px;
+}
+
+.lemma-empty-create-row {
+  display: flex;
+  width: 100%;
+  gap: 8px;
+  margin-bottom: 20px;
+}
+
+.lemma-empty-create-row input {
+  flex: 1;
+  padding: 8px 12px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  font-size: 13px;
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.lemma-empty-create-row input:focus {
+  border-color: var(--border-focus);
+  box-shadow: var(--shadow-glow);
+}
+
+.lemma-empty-feature-pills {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.lemma-empty-feature-pills span {
+  font-size: 11px;
+  padding: 3px 9px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  color: var(--text-muted);
+}
+
+/* Right PDF Pane */
+.lemma-right-pane {
+  width: var(--pane-right-w);
+  flex: 0 0 var(--pane-right-w);
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  /* Inset inside the pane width so the card gap does not change the pane math. */
+  padding: 0 8px 0 3px;
+  background: transparent;
+  overflow: hidden;
+  border-left: none;
+}
+
+/* `hidden` panes stay mounted (editor/PDF state preserved); display:flex would otherwise override it. */
+.lemma-left-pane[hidden],
+.lemma-center-pane[hidden],
+.lemma-right-pane[hidden] {
+  display: none;
+}
+
+/* With the center pane hidden, the remaining outer pane(s) absorb the free space (no empty gap). */
+.lemma-center-pane[hidden] ~ .lemma-right-pane {
+  flex: 1 1 var(--pane-right-w);
+  width: auto;
+}
+
+.lemma-left-pane:has(~ .lemma-center-pane[hidden]):has(~ .lemma-right-pane[hidden]) {
+  flex: 1 1 var(--pane-left-w);
+  width: auto;
+}
+
+.lemma-pdf-preview-pane {
+  position: relative;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--bg-pdf-stage);
+  border-radius: var(--radius-card);
+}
+
+.lemma-pdf-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  height: 50px;
+  flex: none;
+  padding: 0 10px;
+  background: var(--bg-pdf-chrome);
+  border-bottom: 1px solid var(--border-light);
+  color: var(--text-on-light);
+  user-select: none;
+}
+
+.lemma-pdf-toolbar-cluster {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.lemma-pdf-zoom-controls {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.lemma-pdf-zoom-controls button {
+  padding: 5px 9px;
+  background: transparent;
+  color: var(--text-on-light);
+  border: none;
+  border-radius: var(--radius-md);
+  font-family: var(--font-sans);
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: color 0.1s, background 0.1s;
+}
+
+.lemma-pdf-zoom-controls button:hover {
+  background: var(--bg-pdf-stage);
+  color: var(--text-on-light);
+}
+
+.lemma-pdf-zoom-controls a.lemma-btn {
+  text-decoration: none;
+}
+
+.lemma-pdf-zoom-controls span {
+  font-family: var(--font-sans);
+  font-size: 12px;
+  color: var(--text-on-light-muted);
+  min-width: 38px;
+  text-align: center;
+}
+
+.lemma-pdf-preview-pane .lemma-btn-secondary {
+  background: var(--bg-paper);
+  color: var(--text-on-light);
+  border-color: var(--border-light);
+  border-radius: var(--radius-lg);
+}
+
+.lemma-pdf-preview-pane .lemma-btn-secondary:hover {
+  background: var(--bg-pdf-stage);
+  border-color: var(--border-light);
+}
+
+.lemma-pdf-toolbar .lemma-btn-xs {
+  padding: 5px 10px;
+  font-size: 12.5px;
+}
+
+.lemma-pdf-preview-pane {
+  container-type: inline-size;
+}
+
+@container (max-width: 460px) {
+  .lemma-pdf-toolbar {
+    padding: 0 6px;
+    gap: 4px;
+  }
+
+  .lemma-compile-status-badge {
+    padding: 4px 8px;
+    gap: 5px;
+  }
+
+  .lemma-pdf-toolbar .lemma-btn-xs,
+  .lemma-pdf-zoom-controls button {
+    padding: 4px 6px;
+  }
+
+  .lemma-pdf-zoom-controls span {
+    min-width: 32px;
+  }
+}
+
+.lemma-compile-status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 10px 5px 12px;
+  border-radius: var(--radius-xl);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+  border: 1px solid var(--border-light);
+  background: var(--bg-paper);
+  color: var(--text-on-light);
+  cursor: pointer;
+  box-shadow: var(--shadow-sm);
+}
+
+.lemma-compile-status-badge:hover {
+  background: var(--bg-pdf-stage);
+}
+
+.lemma-compiled-check {
+  color: var(--accent-green);
+  font-size: 12px;
+}
+
+.lemma-status-caret {
+  color: var(--text-on-light-muted);
+  font-size: 10px;
+}
+
+.lemma-compile-status-badge.status-success {
+  color: var(--text-on-light);
+}
+
+.lemma-compile-status-badge.status-failed {
+  color: var(--accent-red);
+}
+
+.lemma-compile-status-badge.status-compiling,
+.lemma-compile-status-badge.status-idle {
+  color: var(--text-on-light-muted);
+}
+
+.lemma-compile-diagnostics-dropdown {
+  margin: 0 12px;
+  padding: 10px 12px;
+  background: var(--bg-paper);
+  color: var(--text-on-light);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
+  max-height: 220px;
+  overflow: auto;
+}
+
+.lemma-compile-diagnostics-dropdown p,
+.lemma-compile-diagnostics-dropdown ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 12px;
+}
+
+.lemma-diag-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 0;
+  border-top: 1px solid var(--border-light);
+}
+
+.lemma-diag-actions {
+  display: flex;
+  gap: 6px;
+}
+
+/* Floating dark pill over the PDF stage. */
+.lemma-pdf-statusbar {
+  position: absolute;
+  left: 50%;
+  bottom: 14px;
+  transform: translateX(-50%);
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  max-width: calc(100% - 24px);
+  height: 40px;
+  padding: 0 5px 0 8px;
+  background: var(--bg-pill-dark);
+  border: 1px solid var(--border-color);
+  border-radius: 999px;
+  box-shadow: var(--shadow-pill);
+  white-space: nowrap;
+}
+
+.lemma-pdf-statusbar > .lemma-pdf-page-indicator {
+  padding: 0 8px;
+}
+
+.lemma-pdf-statusbar .lemma-status-caret {
+  color: var(--text-muted);
+}
+
+.lemma-pdf-preview-pane .lemma-pdf-statusbar .lemma-btn-secondary {
+  background: transparent;
+  color: var(--text-primary);
+  border-color: transparent;
+  border-radius: 999px;
+  padding: 5px 12px;
+  font-size: 12.5px;
+  text-decoration: none;
+}
+
+.lemma-pdf-preview-pane .lemma-pdf-statusbar .lemma-btn-secondary:hover:not(:disabled) {
+  background: var(--bg-hover);
+  border-color: transparent;
+}
+
+.lemma-pdf-page-indicator {
+  font-size: 12.5px;
+  color: var(--text-secondary);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lemma-pdf-stats-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  margin: 0;
+  padding: 5px 10px;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  font-family: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.lemma-pdf-stats-toggle:hover {
+  background: var(--bg-hover);
+}
+
+.lemma-pdf-stats-toggle:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-glow);
+}
+
+.lemma-pdf-stats-panel {
+  position: absolute;
+  left: 50%;
+  bottom: 62px;
+  transform: translateX(-50%);
+  z-index: 5;
+  box-sizing: border-box;
+  width: min(300px, calc(100% - 24px));
+  padding: 10px 12px;
+  background: var(--bg-paper);
+  color: var(--text-on-light);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-page);
+}
+
+.lemma-pdf-stats-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.lemma-pdf-stats-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.lemma-pdf-stats-label,
+.lemma-pdf-stats-value {
+  margin: 0;
+  font-size: 12px;
+}
+
+.lemma-pdf-stats-label {
+  min-width: 0;
+  color: var(--text-on-light-muted);
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+
+.lemma-pdf-stats-value {
+  flex: none;
+  margin-left: auto;
+  color: var(--text-on-light);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Empty PDF Viewport */
+.lemma-pdf-empty-viewport {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  padding: 32px 32px 72px;
+  background: var(--bg-pdf-stage);
+}
+
+.lemma-pdf-empty-card {
+  max-width: 360px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.lemma-pdf-empty-icon {
+  font-size: 28px;
+  color: var(--text-muted);
+  margin-bottom: 12px;
+}
+
+.lemma-pdf-empty-card h3 {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-on-light);
+  margin: 0 0 8px;
+}
+
+.lemma-pdf-empty-card p {
+  color: var(--text-on-light-muted);
+  font-size: 12.5px;
+  line-height: 1.5;
+  margin: 0 0 16px;
+}
+
+/* PDF Pages Viewport */
+.lemma-pdf-pages-viewport {
+  flex: 1;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 20px 16px 72px;
+  gap: 16px;
+  background: var(--bg-pdf-stage);
+}
+
+.lemma-pdf-page-container {
+  background: var(--bg-paper);
+  box-shadow: var(--shadow-page);
+  position: relative;
+  border-radius: var(--radius-sm);
+  transition: transform 0.15s ease;
+}
+
+.lemma-pdf-canvas {
+  display: block;
+}
+
+.lemma-synctex-highlight-overlay {
+  position: absolute;
+  background: rgba(245, 158, 11, 0.3);
+  border: 1px solid #f59e0b;
+  pointer-events: none;
+  animation: pulseHighlight 1s ease-in-out 2;
+}
+
+@keyframes pulseHighlight {
+  0%, 100% { opacity: 0.8; }
+  50% { opacity: 0.35; }
+}
+
+.lemma-synctex-fallback-toast {
+  position: absolute;
+  top: 48px;
+  right: 16px;
+  background: var(--bg-elevated);
+  color: var(--accent-amber);
+  border: 1px solid var(--accent-amber);
+  padding: 6px 12px;
+  border-radius: var(--radius-md);
+  font-size: 11.5px;
+  box-shadow: var(--shadow-md);
+  z-index: 100;
+}
+
+/* Modals & Dialogs */
+.lemma-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(4, 6, 12, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  backdrop-filter: blur(5px);
+  padding: 20px;
+}
+
+.lemma-modal-card,
+.lemma-modal-dialog,
+.lemma-consent-modal {
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-xl);
+  padding: 24px 28px;
+  max-width: 580px;
+  width: 92%;
+  max-height: 85vh;
+  overflow-y: auto;
+  box-shadow: var(--shadow-lg);
+  display: flex;
+  flex-direction: column;
+  position: relative;
+}
+
+.lemma-modal-card h2,
+.lemma-modal-dialog h2 {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin: 0 0 16px;
+  letter-spacing: -0.01em;
+  padding-right: 32px;
+}
+
+.lemma-consent-badge {
+  display: inline-block;
+  align-self: flex-start;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  padding: 0;
+  margin-bottom: 8px;
+}
+
+.lemma-modal-close {
+  position: absolute;
+  top: 18px;
+  right: 18px;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 20px;
+  cursor: pointer;
+  padding: 4px;
+  line-height: 1;
+  border-radius: var(--radius-sm);
+  transition: all 0.15s ease;
+}
+
+.lemma-modal-close:hover {
+  color: var(--text-primary);
+  background: var(--bg-secondary);
+}
+
+.lemma-modal-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 20px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border-subtle);
+}
+
+/* Project create dialog */
+.lemma-project-create-dialog {
+  max-width: 420px;
+  gap: 12px;
+}
+
+.lemma-project-create-dialog h2 {
+  margin-bottom: 4px;
+}
+
+.lemma-project-create-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.lemma-project-create-field label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: none;
+  letter-spacing: 0.03em;
+}
+
+.lemma-project-create-input {
+  width: 100%;
+  padding: 8px 10px;
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.lemma-project-create-input:focus {
+  border-color: var(--border-focus);
+  box-shadow: var(--shadow-glow);
+}
+
+.lemma-project-create-error {
+  margin: 0;
+}
+
+/* Zotero setup wizard */
+dialog.lemma-zotero-dialog {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 1100;
+  margin: 0;
+  max-width: 460px;
+  width: 92%;
+  max-height: 85vh;
+  overflow-y: auto;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  padding: 22px 24px 20px;
+  box-shadow: var(--shadow-md);
+  font-family: var(--font-sans);
+}
+
+dialog.lemma-zotero-dialog:modal {
+  overscroll-behavior: contain;
+}
+
+dialog.lemma-zotero-dialog::backdrop {
+  background: rgba(0, 0, 0, 0.45);
+  overflow: hidden;
+  overscroll-behavior: contain;
+}
+
+dialog.lemma-zotero-dialog[open] {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.lemma-zotero-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.lemma-zotero-header h3 {
+  margin: 0;
+  padding-right: 28px;
+  font-size: 16px;
+  font-weight: 500;
+  letter-spacing: -0.02em;
+  color: var(--text-primary);
+}
+
+.lemma-zotero-dialog .lemma-modal-close {
+  top: 16px;
+  right: 16px;
+}
+
+.lemma-zotero-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.lemma-zotero-help,
+.lemma-zotero-note {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
+.lemma-zotero-dialog code {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-primary);
+}
+
+.lemma-zotero-split {
+  display: flex;
+  gap: 12px;
+}
+
+.lemma-zotero-split > .lemma-project-create-field {
+  flex: 1;
+  min-width: 0;
+}
+
+.lemma-zotero-type {
+  flex: 0 0 190px;
+}
+
+.lemma-zotero-dialog .lemma-checkbox-label span {
+  font-size: 12.5px;
+  font-weight: 400;
+  letter-spacing: 0;
+  color: var(--text-secondary);
+  text-transform: none;
+}
+
+.lemma-zotero-dialog .lemma-modal-actions {
+  margin-top: 4px;
+}
+
+.lemma-zotero-actions-split {
+  justify-content: space-between;
+}
+
+.lemma-zotero-summary {
+  background: var(--accent-green-subtle);
+  color: var(--accent-green-text);
+  border-radius: var(--radius-md);
+  padding: 10px 12px;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+dialog.lemma-github-dialog {
+  max-width: 520px;
+}
+
+.lemma-github-dialog code {
+  overflow-wrap: anywhere;
+}
+
+.lemma-github-actions {
+  flex-wrap: wrap;
+  justify-content: space-between;
+}
+
+.lemma-github-action-gap {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-left: auto;
+}
+
+.lemma-github-file-list {
+  margin: 0;
+  padding: 8px 10px;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 140px;
+  overflow-y: auto;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.lemma-connector-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 14px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+}
+
+.lemma-connector-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.lemma-status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.lemma-status-pill.is-connected {
+  background: var(--accent-green-subtle);
+  color: var(--accent-green-text);
+}
+
+.lemma-status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.lemma-connector-meta {
+  margin: 0;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 6px 14px;
+  font-size: 12.5px;
+  line-height: 1.4;
+}
+
+.lemma-connector-meta > div {
+  display: contents;
+}
+
+.lemma-connector-meta dt {
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+.lemma-connector-meta dd {
+  margin: 0;
+  color: var(--text-primary);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.lemma-field-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.lemma-inline-link-btn {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  font-size: 12px;
+  color: var(--text-secondary);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.lemma-inline-link-btn:hover:not(:disabled) {
+  color: var(--text-primary);
+}
+
+.lemma-inline-link-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* Overlay layer for the assistant: aligned to the center column, never blocks the panes beneath. */
+.lemma-chat-layer {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: var(--chat-layer-left, 0px);
+  right: var(--chat-layer-right, 0px);
+  pointer-events: none;
+}
+
+.lemma-chat-layer > * {
+  pointer-events: auto;
+}
+
+/* Floating Chat Bar */
+.lemma-floating-chat-bar {
+  position: absolute;
+  background: var(--bg-composer);
+  border: 1px solid var(--border-color);
+  box-shadow: var(--shadow-md);
+  z-index: 200;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  grid-template-areas:
+    "handle handle handle"
+    "messages messages messages"
+    "refs refs refs"
+    "form meta send";
+  align-items: center;
+  overflow: visible;
+  transition: border-color 0.2s ease;
+}
+
+/* Keep a resized panel inside the chat layer. */
+.lemma-floating-chat-bar {
+  max-height: calc(100% - 24px);
+}
+
+/* The layer spans the grid, whose 8px padding sits outside the editor card. */
+.lemma-floating-chat-bar.expanded {
+  bottom: 20px;
+  left: 14px;
+  right: 14px;
+  border-radius: 18px;
+}
+
+.lemma-floating-chat-bar:focus-within {
+  border-color: var(--border-hover);
+}
+
+.lemma-floating-chat-bar.is-multiline {
+  grid-template-areas:
+    "handle handle handle"
+    "messages messages messages"
+    "refs refs refs"
+    "form form form"
+    ". meta send";
+}
+
+.lemma-floating-chat-bar.is-multiline .lemma-chat-input-form {
+  padding-bottom: 0;
+}
+
+.lemma-floating-chat-bar > .lemma-resize-handle {
+  grid-area: handle;
+}
+
+.lemma-chat-messages {
+  grid-area: messages;
+}
+
+.lemma-chat-input-form {
+  grid-area: form;
+}
+
+.lemma-chat-bar-header {
+  grid-area: meta;
+}
+
+.lemma-chat-send {
+  grid-area: send;
+  align-self: end;
+  justify-self: end;
+  width: 32px;
+  height: 32px;
+  margin: 0 7px 11px 0;
+  padding: 0;
+  border-radius: 999px;
+  font-size: 14px;
+}
+
+.lemma-chat-stop {
+  grid-area: send;
+  align-self: end;
+  justify-self: end;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 32px;
+  margin: 0 7px 11px 0;
+  padding: 0 12px;
+  border-radius: 999px;
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  border-color: var(--border-hover);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.lemma-chat-stop + .lemma-chat-send {
+  width: 0;
+  height: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  opacity: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.lemma-chat-stop:hover {
+  background: var(--bg-hover);
+  border-color: var(--text-muted);
+}
+
+.lemma-chat-stop:focus-visible {
+  outline: none;
+  border-color: var(--border-focus);
+  box-shadow: var(--shadow-glow);
+}
+
+.lemma-chat-run-notice {
+  grid-column: 1 / -1;
+  padding: 4px 14px 6px;
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+
+/* display:flex above would override the UA [hidden] rule; keep the minimised panel mounted but invisible. */
+.lemma-floating-chat-bar[hidden] {
+  display: none;
+}
+
+.lemma-chat-bar-header {
+  position: relative;
+  align-self: end;
+  margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding: 4px 4px 6px 0;
+  gap: 6px;
+}
+
+.lemma-chat-model {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+/* The model select keeps its label for assistive tech; it is not drawn. */
+.lemma-chat-model label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.lemma-chat-model select {
+  max-width: 200px;
+  padding: 3px 6px;
+  background: transparent;
+  color: var(--text-secondary);
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  font-size: 11.5px;
+  cursor: pointer;
+}
+
+.lemma-chat-model select:hover {
+  background: var(--bg-hover);
+}
+
+.lemma-chat-model select:focus {
+  outline: none;
+  border-color: var(--border-focus);
+  box-shadow: var(--shadow-glow);
+}
+
+.lemma-chat-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding-left: 6px;
+  border-left: 1px solid var(--border-color);
+}
+
+.lemma-chat-action-btn,
+.lemma-chat-icon-btn {
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  color: var(--text-muted);
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  font-family: var(--font-sans);
+  line-height: 1;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.lemma-chat-action-btn {
+  padding: 0 7px 0 6px;
+  gap: 4px;
+  font-size: 11.5px;
+  font-weight: 500;
+}
+
+.lemma-chat-icon-btn {
+  width: 24px;
+  padding: 0;
+  font-size: 15px;
+}
+
+.lemma-chat-action-btn:hover,
+.lemma-chat-icon-btn:hover,
+.lemma-chat-icon-btn[aria-expanded="true"] {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.lemma-chat-action-btn:focus-visible,
+.lemma-chat-icon-btn:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-glow);
+}
+
+.lemma-chat-messages {
+  /* --chat-panel-h is the dragged height: it must set the real height, not only cap it, or growing has no effect. */
+  height: var(--chat-panel-h, auto);
+  max-height: var(--chat-panel-h, 260px);
+  min-height: 0;
+  flex: 0 1 auto;
+  overflow-y: auto;
+  padding: 8px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.lemma-chat-messages.is-empty {
+  display: none;
+}
+
+.lemma-chat-msg {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  min-width: 0;
+}
+
+.lemma-chat-msg.role-user {
+  align-items: flex-end;
+  /* Each user prompt opens a new turn: more room above it than between steps inside a turn. */
+  margin-top: 14px;
+}
+
+.lemma-chat-msg.role-user.is-first {
+  margin-top: 2px;
+}
+
+.lemma-chat-msg-meta {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 2px 6px;
+  max-width: 85%;
+  font-size: 10.5px;
+  line-height: 1.4;
+  color: var(--text-dim);
+}
+
+.lemma-chat-msg-meta > * + *::before {
+  content: "·";
+  margin-right: 6px;
+  color: var(--text-dim);
+}
+
+.lemma-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.lemma-chat-user-bubble {
+  max-width: 85%;
+  padding: 7px 11px;
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-xl) var(--radius-xl) var(--radius-sm) var(--radius-xl);
+  font-size: 13px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.lemma-chat-msg.role-assistant {
+  align-self: stretch;
+}
+
+.lemma-chat-reply {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.lemma-markdown-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow-wrap: anywhere;
+}
+
+.lemma-markdown-body em {
+  font-style: italic;
+}
+
+.lemma-markdown-body strong {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.lemma-md-p {
+  margin: 0;
+  white-space: pre-wrap;
+}
+
+.lemma-md-heading {
+  margin: 4px 0 0;
+  color: var(--text-primary);
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.lemma-md-heading:first-child {
+  margin-top: 0;
+}
+
+.lemma-md-h1 { font-size: 16px; }
+.lemma-md-h2 { font-size: 15px; }
+.lemma-md-h3 { font-size: 14px; }
+.lemma-md-h4 { font-size: 13.5px; }
+.lemma-md-h5,
+.lemma-md-h6 { font-size: 13px; color: var(--text-secondary); }
+
+.lemma-md-hr {
+  width: 100%;
+  border: 0;
+  border-top: 1px solid var(--border-color);
+  margin: 4px 0;
+}
+
+.lemma-md-ul,
+.lemma-md-ol {
+  margin: 0;
+  padding-left: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.lemma-md-ul {
+  list-style-type: disc;
+}
+
+.lemma-md-ul .lemma-md-ul {
+  list-style-type: circle;
+  margin-top: 4px;
+}
+
+.lemma-md-ol {
+  list-style-type: decimal;
+}
+
+.lemma-md-li {
+  display: list-item;
+}
+
+.lemma-md-li > .lemma-md-p,
+.lemma-md-li-text {
+  white-space: pre-wrap;
+}
+
+.lemma-md-li > .lemma-md-ul,
+.lemma-md-li > .lemma-md-ol {
+  margin-top: 4px;
+}
+
+.lemma-md-blockquote {
+  margin: 0;
+  padding: 4px 10px;
+  border-left: 2px solid var(--border-hover);
+  color: var(--text-muted);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.lemma-md-table-wrap {
+  overflow-x: auto;
+}
+
+.lemma-md-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+}
+
+.lemma-md-table th,
+.lemma-md-table td {
+  padding: 5px 8px;
+  border: 1px solid var(--border-color);
+  text-align: left;
+}
+
+.lemma-md-table th {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.lemma-math-inline,
+.lemma-math-display {
+  white-space: nowrap;
+}
+
+.lemma-math-display {
+  display: block;
+  margin: 0.7em 0;
+  overflow-x: auto;
+  text-align: center;
+}
+
+.lemma-chat-msg.is-error .lemma-error-banner {
+  margin: 0;
+}
+
+.lemma-inline-code {
+  padding: 1px 4px;
+  background: var(--bg-tertiary);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+}
+
+.lemma-chat-code {
+  margin: 0;
+  max-height: 220px;
+  overflow: auto;
+  padding: 8px 10px;
+  background: var(--bg-well);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  line-height: 1.5;
+  white-space: pre;
+}
+
+.lemma-chat-edit-card {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.lemma-chat-edit-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+
+.lemma-chat-edit-head::-webkit-details-marker {
+  display: none;
+}
+
+.lemma-chat-edit-head:hover {
+  background: var(--bg-tertiary);
+}
+
+.lemma-chat-edit-head:focus-visible {
+  outline: 1px solid var(--border-focus);
+  outline-offset: -1px;
+}
+
+.lemma-chat-edit-chevron {
+  width: 6px;
+  height: 6px;
+  flex-shrink: 0;
+  border-right: 1.5px solid var(--text-muted);
+  border-bottom: 1.5px solid var(--text-muted);
+  transform: rotate(-45deg);
+  transition: transform 0.15s ease;
+}
+
+.lemma-chat-edit-card[open] .lemma-chat-edit-chevron {
+  transform: rotate(45deg);
+}
+
+.lemma-chat-edit-card > .lemma-chat-code {
+  margin: 0 8px 8px;
+}
+
+.lemma-chat-code.is-wrapped {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.lemma-chat-edit-title {
+  color: var(--text-primary);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.lemma-chat-edit-stats {
+  display: inline-flex;
+  gap: 6px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+.lemma-chat-edit-stats .is-removed {
+  color: var(--accent-red-text);
+}
+
+.lemma-chat-edit-stats .is-added {
+  color: var(--accent-green-text);
+}
+
+.lemma-chat-edit-hint {
+  margin-left: auto;
+  color: var(--text-dim);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.lemma-chat-typing {
+  display: inline-flex;
+  gap: 4px;
+  padding: 6px 0;
+}
+
+.lemma-chat-typing span {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--text-muted);
+  animation: lemma-chat-typing 1.2s infinite ease-in-out;
+}
+
+.lemma-chat-typing span:nth-child(2) {
+  animation-delay: 0.15s;
+}
+
+.lemma-chat-typing span:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+@keyframes lemma-chat-typing {
+  0%, 80%, 100% {
+    opacity: 0.25;
+    transform: translateY(0);
+  }
+  40% {
+    opacity: 1;
+    transform: translateY(-2px);
+  }
+}
+
+/* Tool progress for one turn: a quiet, indented log with a rail, not a stack of messages. */
+.lemma-chat-activity {
+  display: flex;
+  flex-direction: column;
+  align-self: stretch;
+  gap: 1px;
+  margin: 2px 0;
+  padding-left: 10px;
+  border-left: 1px solid var(--border-color);
+}
+
+.lemma-chat-msg.role-status,
+.lemma-chat-status-line {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  align-self: stretch;
+  gap: 6px;
+  min-width: 0;
+  min-height: 20px;
+  font-size: 11.5px;
+  line-height: 1.4;
+  color: var(--text-dim);
+}
+
+.lemma-chat-status-text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.lemma-chat-status-pill {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  padding: 0 4px;
+  color: var(--text-muted);
+  background: var(--bg-tertiary);
+  border-radius: var(--radius-sm);
+  white-space: nowrap;
+}
+
+.lemma-chat-status-copy {
+  flex-shrink: 0;
+  padding: 1px 6px;
+  background: transparent;
+  color: var(--text-muted);
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  font-family: var(--font-sans);
+  font-size: 11px;
+  line-height: 1.3;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s ease, color 0.15s ease, background 0.15s ease, border-color 0.15s ease;
+}
+
+.lemma-chat-msg.role-status:hover .lemma-chat-status-copy,
+.lemma-chat-msg.role-status:focus-within .lemma-chat-status-copy,
+.lemma-chat-status-line:hover .lemma-chat-status-copy,
+.lemma-chat-status-line:focus-within .lemma-chat-status-copy,
+.lemma-chat-status-copy:focus-visible {
+  opacity: 1;
+}
+
+.lemma-chat-status-copy:hover {
+  color: var(--text-primary);
+  background: var(--bg-elevated);
+  border-color: var(--border-color);
+}
+
+.lemma-chat-status-copy:focus-visible {
+  outline: none;
+  color: var(--text-primary);
+  background: var(--bg-elevated);
+  border-color: var(--border-focus);
+}
+
+.lemma-chat-status-running {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 20px;
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+
+.lemma-chat-status-running-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--text-secondary);
+  animation: lemma-chat-status-pulse 1.2s infinite ease-in-out;
+}
+
+@keyframes lemma-chat-status-pulse {
+  0%, 100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+/* Inline diff hunk in the CodeMirror editor */
+.lemma-cm-diff-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 6px 12px 4px 0;
+  padding: 8px 10px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  font-family: var(--font-sans);
+  font-size: 12px;
+  color: var(--text-secondary);
+  white-space: normal;
+}
+
+.lemma-cm-diff-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.lemma-cm-diff-title-block {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.lemma-cm-diff-title {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.lemma-cm-diff-meta {
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.lemma-cm-diff-actions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.lemma-cm-diff-badges,
+.lemma-cm-diff-cites {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.lemma-cm-diff-cites-label {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.lemma-cm-diff-cite code {
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+.lemma-cm-diff-note,
+.lemma-cm-diff-error {
+  margin: 0;
+  font-size: 11.5px;
+}
+
+.lemma-cm-diff-note {
+  color: var(--accent-amber);
+}
+
+.lemma-cm-diff-error {
+  padding: 5px 8px;
+  background: var(--accent-red-subtle);
+  color: var(--accent-red-text);
+  border-radius: var(--radius-sm);
+}
+
+.lemma-cm-diff-error[hidden] {
+  display: none;
+}
+
+.lemma-cm-diff-removed-line {
+  background: var(--accent-red-subtle);
+  text-decoration: line-through;
+  text-decoration-color: var(--accent-red);
+}
+
+.lemma-cm-diff-added {
+  margin: 0 12px 6px 0;
+  padding: 2px 0;
+  background: var(--accent-green-subtle);
+  border-left: 2px solid var(--accent-green);
+  color: var(--accent-green-text);
+  font-family: var(--font-mono);
+}
+
+.lemma-cm-diff-added-line {
+  padding: 0 6px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.lemma-cm-diff-added.is-deletion {
+  padding: 4px 8px;
+  background: var(--accent-red-subtle);
+  border-left-color: var(--accent-red);
+  color: var(--accent-red-text);
+  font-family: var(--font-sans);
+  font-size: 11.5px;
+}
+
+.lemma-chat-route {
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+.lemma-chat-input-form {
+  display: flex;
+  align-items: flex-end;
+  padding: 8px 4px 8px 12px;
+  gap: 6px;
+  min-width: 0;
+}
+
+.lemma-chat-attach-btn {
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  margin-bottom: 4px;
+  color: var(--text-muted);
+  border-radius: var(--radius-sm);
+  font-size: 14px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.lemma-chat-attach-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+/* The hidden file input is a sibling of the label (not a child), so :focus-within on the label never matches. */
+.lemma-chat-input-form:has(.lemma-file-input-hidden:focus-visible) .lemma-chat-attach-btn {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+  box-shadow: var(--shadow-glow);
+}
+
+.lemma-file-input-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.lemma-chat-refs {
+  grid-area: refs;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 12px 0;
+  min-width: 0;
+}
+
+.lemma-chat-ref-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  max-width: min(220px, 100%);
+  padding: 2px 4px 2px 8px;
+  background: var(--bg-elevated);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+.lemma-chat-ref-chip-name {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.lemma-chat-ref-chip.is-selection {
+  gap: 5px;
+  max-width: min(300px, 100%);
+}
+
+.lemma-chat-ref-chip-range {
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+
+.lemma-chat-ref-chip-remove {
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  background: none;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.lemma-chat-ref-chip-remove:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.lemma-chat-ref-notice {
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.lemma-chat-ref-notice.is-error {
+  color: var(--accent-red-text);
+}
+
+.lemma-chat-input-form {
+  position: relative;
+}
+
+.lemma-chat-input-form.is-drop-target {
+  border-radius: 14px;
+  box-shadow: inset 0 0 0 1px var(--border-focus);
+}
+
+.lemma-chat-attach-anchor {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.lemma-chat-attach-anchor > .lemma-chat-attach-btn {
+  padding: 0;
+  background: none;
+  border: none;
+}
+
+.lemma-chat-attach-menu,
+.lemma-chat-file-picker {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 0;
+  z-index: 30;
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+}
+
+.lemma-chat-attach-menu {
+  width: 200px;
+}
+
+.lemma-chat-file-picker {
+  width: 300px;
+}
+
+.lemma-chat-file-picker-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 240px;
+  overflow: auto;
+}
+
+.lemma-chat-file-picker-list .lemma-tools-item {
+  width: 100%;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.lemma-chat-file-picker-list .lemma-tools-item.is-active {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+
+.lemma-chat-file-picker-empty {
+  padding: 6px 10px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.lemma-chat-msg-context {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 2px 8px;
+  min-width: 0;
+}
+
+.lemma-chat-msg-context-item {
+  font-family: var(--font-mono);
+}
+
+/* Attached to the chat only: dashed, so it reads as "not a project file". */
+.lemma-chat-ref-chip.is-attachment {
+  gap: 4px;
+  background: transparent;
+  border-style: dashed;
+  border-color: var(--border-hover);
+}
+
+.lemma-chat-prompt-input,
+.lemma-chat-input-form input[type="text"] {
+  flex: 1;
+  min-width: 0;
+  padding: 7px 4px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+textarea.lemma-chat-prompt-input {
+  display: block;
+  margin: 0;
+  max-height: 168px;
+  line-height: 20px;
+  resize: none;
+  overflow-y: auto;
+  overflow-wrap: anywhere;
+}
+
+.lemma-chat-prompt-input:focus,
+.lemma-chat-input-form input[type="text"]:focus {
+  border-color: transparent;
+  box-shadow: none;
+}
+
+.lemma-chat-input-form button[type="submit"] {
+  padding: 0;
+  background: var(--accent-blue);
+  color: var(--on-accent);
+  border: none;
+  border-radius: 999px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.lemma-chat-input-form button[type="submit"]:hover {
+  background: var(--accent-blue-hover);
+}
+
+/* Status & Alert Banners */
+.lemma-status-banner {
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-color);
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+}
+
+.lemma-error-banner,
+.lemma-error {
+  background: var(--accent-red-subtle);
+  color: var(--accent-red-text);
+  border: 1px solid var(--border-subtle);
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+}
+
+/* Badges */
+.lemma-badge-success {
+  background: var(--accent-green-subtle);
+  color: var(--accent-green-text);
+  padding: 2px 7px;
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.lemma-badge-warning {
+  background: var(--accent-amber-subtle);
+  color: var(--accent-amber);
+  padding: 2px 7px;
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.lemma-badge-danger {
+  background: var(--accent-red-subtle);
+  color: var(--accent-red-text);
+  padding: 2px 7px;
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+/* ==============================================================================
+   Review Studio View
+   ============================================================================== */
+.lemma-review-studio {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  height: auto;
+  overflow-y: auto;
+  background: transparent;
+  padding: 22px 28px 40px;
+  gap: 28px;
+  color: var(--text-primary);
+}
+
+.lemma-review-studio-header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  padding-bottom: 16px;
+  padding-right: 84px;
+  border-bottom: 1px solid var(--border-subtle);
+  gap: 16px;
+}
+
+.lemma-review-studio-title-block {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.lemma-review-studio-title-block h2 {
+  font-size: 22px;
+  font-weight: 500;
+  color: var(--text-primary);
+  margin: 0;
+  letter-spacing: -0.02em;
+}
+
+.lemma-review-studio-subtitle {
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.lemma-review-controls {
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  box-shadow: none;
+}
+
+.lemma-persona-selectors-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 16px;
+}
+
+.lemma-selector-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  padding: 0;
+}
+
+.lemma-selector-card:hover {
+  border-color: var(--border-color);
+}
+
+.lemma-selector-card label {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: none;
+  letter-spacing: 0.03em;
+}
+
+.lemma-selector-card select {
+  width: 100%;
+  padding: 8px 10px;
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  font-size: 12.5px;
+  font-weight: 500;
+  outline: none;
+  cursor: pointer;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.lemma-selector-card select:focus {
+  border-color: var(--border-focus);
+  box-shadow: var(--shadow-glow);
+}
+
+.lemma-checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.lemma-checkbox-label input[type="checkbox"] {
+  accent-color: var(--accent-blue);
+  width: 15px;
+  height: 15px;
+  cursor: pointer;
+}
+
+.lemma-checkbox-label span {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: none;
+  letter-spacing: 0.03em;
+}
+
+.lemma-review-action-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-top: 14px;
+  border-top: 1px solid var(--border-subtle);
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.lemma-estimate-display {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.lemma-estimate-badges {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.lemma-badge-estimate {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  background: var(--bg-tertiary);
+  color: var(--accent-green);
+  border: 1px solid rgba(16, 185, 129, 0.25);
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  font-family: var(--font-mono);
+  font-weight: 600;
+}
+
+.lemma-badge-confirm-req {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  background: var(--accent-amber-subtle);
+  color: #fbbf24;
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  border-radius: var(--radius-sm);
+  font-size: 11.5px;
+  font-weight: 600;
+}
+
+.lemma-review-results-section {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.lemma-results-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 8px 0;
+}
+
+.lemma-report-picker {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.lemma-report-picker label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.lemma-report-picker select {
+  padding: 6px 10px;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  font-size: 12px;
+}
+
+.lemma-severity-filters {
+  display: inline-flex;
+  align-items: center;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: 3px;
+  gap: 2px;
+}
+
+.lemma-filter-btn {
+  background: transparent;
+  color: var(--text-secondary);
+  border: none;
+  border-radius: var(--radius-sm);
+  padding: 5px 12px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.lemma-filter-btn:hover {
+  color: var(--text-primary);
+  background: var(--bg-tertiary);
+}
+
+.lemma-filter-btn.active {
+  background: var(--accent-blue);
+  color: var(--on-accent);
+  font-weight: 600;
+}
+
+.lemma-filter-btn.major.active {
+  background: var(--accent-red);
+  color: var(--text-primary);
+}
+
+.lemma-filter-btn.minor.active {
+  background: var(--accent-amber);
+}
+
+.lemma-filter-btn.nit.active {
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+}
+
+.lemma-issues-container {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.lemma-empty-state {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 28px 8px;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  color: var(--text-muted);
+  font-size: 13.5px;
+  text-align: center;
+}
+
+.lemma-issue-card {
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--border-subtle);
+  border-radius: 0;
+  padding: 16px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  box-shadow: none;
+}
+
+.lemma-issue-card.lemma-issue-major,
+.lemma-issue-card.lemma-issue-minor,
+.lemma-issue-card.lemma-issue-nit {
+  border-left-color: transparent;
+}
+
+.lemma-issue-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.lemma-issue-badges {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.lemma-severity-badge {
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.lemma-severity-badge.lemma-badge-major {
+  background: var(--accent-red-subtle);
+  color: var(--accent-red-text);
+  border: 1px solid var(--border-subtle);
+}
+
+.lemma-severity-badge.lemma-badge-minor {
+  background: var(--accent-amber-subtle);
+  color: var(--accent-amber);
+  border: 1px solid var(--border-subtle);
+}
+
+.lemma-severity-badge.lemma-badge-nit {
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-color);
+}
+
+.lemma-persona-badge {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  background: var(--bg-secondary);
+  padding: 2px 7px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-subtle);
+}
+
+.lemma-badge-stale {
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--text-muted);
+  background: var(--bg-tertiary);
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  border: 1px dashed var(--border-color);
+}
+
+.lemma-issue-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.lemma-issue-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+  line-height: 1.4;
+}
+
+.lemma-quoted-anchor {
+  margin: 0;
+  padding: 8px 12px;
+  background: var(--bg-secondary);
+  border-left: 3px solid var(--accent-blue);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+.lemma-issue-critique {
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text-primary);
+}
+
+.lemma-suggested-fix-box {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.lemma-suggested-fix-box strong {
+  font-size: 11.5px;
+  color: var(--text-secondary);
+  text-transform: none;
+  letter-spacing: 0.03em;
+}
+
+.lemma-fix-text {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  background: var(--bg-app);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+  color: #6ee7b7;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.lemma-subtext {
+  font-size: 12.5px;
+  color: var(--text-muted);
+  line-height: 1.5;
+  margin-top: 6px;
+}
+
+/* ==============================================================================
+   Version History (shared diff / bibliography-loss styles)
+   ============================================================================== */
+.lemma-bib-loss-warning {
+  background: rgba(245, 158, 11, 0.08);
+  border: 1px solid var(--accent-amber);
+  border-radius: var(--radius-lg);
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  color: #fde68a;
+}
+
+.lemma-bib-loss-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.lemma-bib-loss-icon {
+  font-size: 20px;
+  line-height: 1;
+}
+
+.lemma-bib-loss-title {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: #fbbf24;
+  margin: 0 0 4px;
+}
+
+.lemma-bib-loss-desc {
+  font-size: 12px;
+  color: #fcd34d;
+  margin: 0;
+  line-height: 1.4;
+}
+
+.lemma-bib-keys-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding-left: 30px;
+}
+
+.lemma-bib-key-tag {
+  background: rgba(245, 158, 11, 0.25);
+  color: #fef3c7;
+  border: 1px solid rgba(245, 158, 11, 0.4);
+  border-radius: var(--radius-sm);
+  padding: 2px 7px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.lemma-bib-confirm-row {
+  padding-left: 30px;
+}
+
+.lemma-timeline-diff-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex: 1;
+}
+
+.lemma-timeline-files-changed {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.lemma-timeline-files-list {
+  font-family: var(--font-mono);
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+.lemma-timeline-diff-box {
+  background: var(--bg-app);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  max-height: 220px;
+  overflow-y: auto;
+  padding: 0;
+}
+
+.lemma-timeline-diff-code {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--text-primary);
+  margin: 0;
+  padding: 12px 14px;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+}
+
+.lemma-timeline-diff-placeholder {
+  font-size: 12px;
+  color: var(--text-muted);
+  padding: 12px 14px;
+}
+
+/* Structured unified diff viewer */
+.lemma-diff-viewer {
+  display: flex;
+  flex-direction: column;
+}
+
+.lemma-diff-file + .lemma-diff-file {
+  border-top: 1px solid var(--border-color);
+}
+
+.lemma-diff-file-header {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--bg-primary);
+  border: none;
+  border-bottom: 1px solid var(--border-subtle);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.lemma-diff-file-header:hover {
+  background: var(--bg-secondary);
+}
+
+.lemma-diff-file-header:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 1px var(--border-focus);
+}
+
+.lemma-diff-file-chevron {
+  flex: none;
+  color: var(--text-muted);
+  font-size: 11px;
+  width: 12px;
+  text-align: center;
+}
+
+.lemma-diff-file-name {
+  font-family: var(--font-mono);
+  font-weight: 500;
+  color: var(--text-primary);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lemma-diff-status-badge {
+  flex: none;
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  font-size: 10.5px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.lemma-diff-status-badge.is-added {
+  background: var(--accent-green-subtle);
+  color: var(--accent-green-text);
+}
+
+.lemma-diff-status-badge.is-deleted {
+  background: var(--accent-red-subtle);
+  color: var(--accent-red-text);
+}
+
+.lemma-diff-status-badge.is-renamed {
+  background: var(--accent-amber-subtle);
+  color: var(--accent-amber);
+}
+
+.lemma-diff-file-stats {
+  margin-left: auto;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.lemma-diff-stat-add {
+  color: var(--accent-green-text);
+}
+
+.lemma-diff-stat-del {
+  color: var(--accent-red-text);
+}
+
+.lemma-diff-binary-note {
+  padding: 12px 14px;
+  font-size: 12px;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.lemma-diff-hunk + .lemma-diff-hunk {
+  border-top: 1px solid var(--border-subtle);
+}
+
+.lemma-diff-hunk-header {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 5px 12px;
+  background: var(--bg-well);
+  border-bottom: 1px solid var(--border-subtle);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.lemma-diff-hunk-range {
+  flex: none;
+  color: var(--accent-cyan);
+  font-weight: 500;
+}
+
+.lemma-diff-hunk-context {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-dim);
+}
+
+.lemma-diff-lines {
+  display: flex;
+  flex-direction: column;
+  padding: 4px 0;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.lemma-diff-line {
+  display: grid;
+  grid-template-columns: 36px 36px 18px minmax(0, 1fr);
+  align-items: baseline;
+  padding: 1px 12px 1px 4px;
+  border-left: 2px solid transparent;
+}
+
+.lemma-diff-line.is-add {
+  background: var(--accent-green-subtle);
+  border-left-color: var(--accent-green);
+}
+
+.lemma-diff-line.is-del {
+  background: var(--accent-red-subtle);
+  border-left-color: var(--accent-red);
+}
+
+.lemma-diff-line.is-meta {
+  color: var(--text-dim);
+  font-style: italic;
+}
+
+.lemma-diff-ln {
+  padding-right: 8px;
+  text-align: right;
+  color: var(--text-dim);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  user-select: none;
+}
+
+.lemma-diff-sign {
+  text-align: center;
+  font-weight: 600;
+  user-select: none;
+  color: var(--text-dim);
+}
+
+.lemma-diff-line.is-add .lemma-diff-sign {
+  color: var(--accent-green-text);
+}
+
+.lemma-diff-line.is-del .lemma-diff-sign {
+  color: var(--accent-red-text);
+}
+
+.lemma-diff-text {
+  min-width: 0;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  color: var(--text-secondary);
+}
+
+.lemma-diff-line.is-add .lemma-diff-text {
+  color: var(--text-primary);
+}
+
+.lemma-diff-line.is-del .lemma-diff-text {
+  color: var(--accent-red-text);
+}
+
+.lemma-diff-word-add {
+  background: rgba(61, 143, 110, 0.42);
+  color: #e6faee;
+  border-radius: 2px;
+  padding: 0 1px;
+}
+
+.lemma-diff-word-del {
+  background: rgba(196, 92, 82, 0.42);
+  color: #ffe3e0;
+  border-radius: 2px;
+  padding: 0 1px;
+}
+
+/* Version history drawer */
+.lemma-history-drawer {
+  position: fixed;
+  top: 52px;
+  right: 0;
+  bottom: 0;
+  width: min(420px, 100vw);
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-primary);
+  border-left: 1px solid var(--border-subtle);
+  box-shadow: none;
+  outline: none;
+}
+
+.lemma-history-page.lemma-history-drawer {
+  position: relative;
+  top: auto;
+  right: auto;
+  bottom: auto;
+  width: auto;
+  flex: 1;
+  min-height: 0;
+  z-index: auto;
+  border-left: none;
+  background: transparent;
+}
+
+.lemma-history-heading {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.lemma-history-subtitle {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--text-secondary);
+}
+
+.lemma-history-back {
+  margin-left: auto;
+  flex: none;
+}
+
+.lemma-history-page .lemma-history-header {
+  align-items: flex-end;
+  padding: 22px 108px 16px 28px;
+  gap: 16px;
+}
+
+.lemma-history-page .lemma-history-title {
+  font-size: 22px;
+  font-weight: 500;
+  letter-spacing: -0.02em;
+}
+
+.lemma-history-page .lemma-history-body {
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+  gap: 28px;
+  padding: 16px 28px 20px;
+  overflow: hidden;
+}
+
+.lemma-history-page .lemma-history-body:has(.lemma-empty-state),
+.lemma-history-page .lemma-history-body:has(.lemma-error-banner) {
+  flex-direction: column;
+  overflow-y: auto;
+}
+
+.lemma-history-page .lemma-history-list {
+  width: min(340px, 38%);
+  flex: none;
+  max-height: none;
+  min-height: 0;
+}
+
+.lemma-history-page .lemma-timeline-diff-section {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.lemma-history-page .lemma-timeline-diff-box {
+  flex: 1;
+  max-height: none;
+  min-height: 180px;
+}
+
+.lemma-history-page .lemma-history-footer {
+  padding: 12px 28px 20px;
+}
+
+@media (max-width: 800px) {
+  .lemma-history-page .lemma-history-body {
+    flex-direction: column;
+    overflow-y: auto;
+  }
+
+  .lemma-history-page .lemma-history-list {
+    width: auto;
+    max-height: 240px;
+  }
+}
+
+.lemma-history-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.lemma-history-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.lemma-history-close {
+  margin-left: auto;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 18px;
+  line-height: 1;
+  padding: 4px 6px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.lemma-history-close:hover {
+  color: var(--text-primary);
+  background: var(--bg-secondary);
+}
+
+.lemma-history-close:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.lemma-history-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.lemma-history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 40%;
+  min-height: 120px;
+  overflow-y: auto;
+  flex-shrink: 0;
+}
+
+.lemma-history-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.lemma-history-day {
+  margin: 0 0 4px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: none;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+
+.lemma-history-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  width: 100%;
+  padding: 8px 10px;
+  text-align: left;
+  font-family: var(--font-sans);
+  font-size: 12.5px;
+  color: var(--text-secondary);
+  background: transparent;
+  border: 1px solid transparent;
+  border-bottom: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+}
+
+.lemma-history-row:hover {
+  background: var(--bg-hover);
+}
+
+.lemma-history-row:focus-visible {
+  outline: none;
+  border-color: var(--border-focus);
+  box-shadow: var(--shadow-glow);
+}
+
+.lemma-history-row[aria-current="true"] {
+  background: var(--accent-blue-subtle);
+  border-color: var(--accent-blue);
+}
+
+.lemma-history-row:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.lemma-history-row-label {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.lemma-history-row-time {
+  margin-left: auto;
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+
+.lemma-history-row-detail {
+  flex-basis: 100%;
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lemma-history-row[aria-current="true"] .lemma-history-row-detail {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  overflow-wrap: break-word;
+}
+
+.lemma-history-footer {
+  padding: 12px 16px;
+  border-top: 1px solid var(--border-subtle);
+  display: flex;
+  justify-content: flex-end;
+}
+
+.lemma-history-confirm {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+}
+
+.lemma-history-confirm-text {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.4;
+  color: var(--text-secondary);
+}
+
+.lemma-history-confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+/* ==============================================================================
+   Tools Menu, Visual-to-LaTeX & Export Modals
+   ============================================================================== */
+.lemma-tab-row {
+  display: flex;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: 3px;
+  gap: 3px;
+  margin-bottom: 16px;
+}
+
+.lemma-tab-row button {
+  flex: 1;
+  background: transparent;
+  color: var(--text-secondary);
+  border: none;
+  border-radius: var(--radius-sm);
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.lemma-tab-row button:hover {
+  color: var(--text-primary);
+  background: var(--bg-tertiary);
+}
+
+.lemma-tab-row button[aria-selected="true"] {
+  background: var(--accent-blue);
+  color: #ffffff;
+  font-weight: 600;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+}
+
+.lemma-tab-content {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.lemma-tab-content label {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: none;
+  letter-spacing: 0.03em;
+}
+
+.lemma-tab-content textarea {
+  width: 100%;
+  padding: 10px 12px;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  line-height: 1.5;
+  resize: vertical;
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.lemma-tab-content textarea:focus {
+  border-color: var(--border-focus);
+  box-shadow: var(--shadow-glow);
+}
+
+.lemma-tab-content select {
+  width: 100%;
+  padding: 8px 10px;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  font-size: 12.5px;
+  outline: none;
+  cursor: pointer;
+}
+
+.lemma-tab-content select:focus {
+  border-color: var(--border-focus);
+}
+
+.lemma-form-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.lemma-form-row > div {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.lemma-form-row label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: none;
+  letter-spacing: 0.03em;
+}
+
+.lemma-form-row input[type="text"] {
+  width: 100%;
+  padding: 8px 10px;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  font-size: 12.5px;
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.lemma-form-row input[type="text"]:focus {
+  border-color: var(--border-focus);
+  box-shadow: var(--shadow-glow);
+}
+
+.lemma-convert-result {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  padding: 14px;
+  margin-bottom: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.lemma-convert-result h3 {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.lemma-convert-result pre {
+  margin: 0;
+  background: var(--bg-app);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 10px 12px;
+  max-height: 160px;
+  overflow-y: auto;
+}
+
+.lemma-convert-result code {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: #38bdf8;
+  white-space: pre-wrap;
+}
+
+.lemma-lint-warnings {
+  background: var(--accent-amber-subtle);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  border-radius: var(--radius-sm);
+  padding: 8px 12px;
+  font-size: 11.5px;
+  color: #fbbf24;
+}
+
+.lemma-lint-warnings ul {
+  margin: 4px 0 0 18px;
+  padding: 0;
+}
+
+.lemma-green {
+  color: #34d399;
+  font-size: 12px;
+  font-weight: 500;
+  margin: 0;
+}
+
+.lemma-red {
+  color: #f87171;
+}
+
+/* Export Modal */
+.lemma-export-report {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin: 14px 0;
+}
+
+.lemma-verification-badge-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  color: var(--text-secondary);
+}
+
+.lemma-file-tag-list {
+  list-style: none;
+  padding: 0;
+  margin: 6px 0 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  max-height: 120px;
+  overflow-y: auto;
+}
+
+.lemma-file-tag-list li {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  padding: 2px 7px;
+}
+
+.lemma-file-tag-list li.lemma-stripped-file {
+  text-decoration: line-through;
+  opacity: 0.6;
+}
+
+.lemma-download-box {
+  margin-top: 10px;
+}
+
+/* Health Check Modal */
+.lemma-health-report {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin: 14px 0;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+.lemma-health-report section {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: 12px 14px;
+}
+
+.lemma-health-report section h3 {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0 0 8px;
+}
+
+.lemma-health-report ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.lemma-clickable-issue {
+  font-size: 12px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: 4px 6px;
+  border-radius: var(--radius-sm);
+  transition: all 0.1s ease;
+}
+
+.lemma-clickable-issue:hover {
+  background: var(--bg-tertiary);
+  color: var(--accent-blue);
+}
+
+/* Selection Quick Action Toolbar */
+.lemma-selection-toolbar {
+  position: absolute;
+  top: 48px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 150;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  padding: 6px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  backdrop-filter: blur(8px);
+}
+
+.lemma-selection-buttons {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.lemma-toolbar-result-popover {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: 12px;
+  max-width: 420px;
+  max-height: 260px;
+  overflow-y: auto;
+  font-size: 12.5px;
+}
+
+.lemma-toolbar-result-popover h3 {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0 0 8px;
+}
+
+/* ==============================================================================
+   Settings > Models
+   ============================================================================== */
+.lemma-models-settings {
+  max-width: 960px;
+  width: 100%;
+  margin: 0 auto;
+}
+
+.lemma-settings-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--border-subtle);
+  border-radius: 0;
+  padding: 4px 0 20px;
+  box-shadow: none;
+}
+
+.lemma-settings-card h3 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.lemma-smart-routing-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.lemma-smart-routing-row select {
+  min-width: 220px;
+  max-width: 360px;
+  padding: 8px 10px;
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  font-family: var(--font-sans);
+  font-size: 13px;
+}
+
+.lemma-smart-routing-row select:focus {
+  outline: none;
+  border-color: var(--border-focus);
+  box-shadow: var(--shadow-glow);
+}
+
+.lemma-smart-routing-row select:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.lemma-settings-input {
+  flex: 1;
+  min-width: 0;
+  width: 100%;
+  padding: 8px 10px;
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  font-size: 12.5px;
+  outline: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.lemma-settings-input:focus {
+  border-color: var(--border-focus);
+  box-shadow: var(--shadow-glow);
+}
+
+.lemma-model-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.lemma-model-list-scroll {
+  max-height: 360px;
+  overflow-y: auto;
+}
+
+.lemma-model-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 4px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.lemma-model-row:last-child {
+  border-bottom: none;
+}
+
+.lemma-model-row-main {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+  flex: 1;
+  min-width: 0;
+}
+
+.lemma-model-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.lemma-model-id {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
+}
+
+.lemma-model-price {
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+
+.lemma-model-badge {
+  flex-shrink: 0;
+  text-transform: none;
+  letter-spacing: 0.04em;
+}
+
+.lemma-model-enabled-tag {
+  flex-shrink: 0;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--accent-green);
+}
+
+.lemma-model-row .lemma-btn {
+  flex-shrink: 0;
+}
+
+/* Projects hub: the first screen after sign-in, outside the editor grid. */
+.lemma-projects-hub {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  padding: 8px;
+  background: var(--bg-app);
+}
+
+.lemma-hub-panel {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  background: var(--bg-editor);
+  border: 1px solid var(--border-card);
+  border-radius: var(--radius-card);
+}
+
+.lemma-hub-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 24px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.lemma-hub-topbar .lemma-sidebar-brand {
+  padding: 0;
+}
+
+.lemma-hub-topbar .lemma-btn {
+  max-width: 50%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lemma-hub-content {
+  width: 100%;
+  max-width: 1040px;
+  margin: 0 auto;
+  padding: 40px 24px 64px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.lemma-hub-heading {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+.lemma-hub-heading h1 {
+  margin: 0;
+  font-size: 26px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--text-primary);
+}
+
+.lemma-hub-heading p {
+  margin: 4px 0 0;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.lemma-hub-empty {
+  padding: 48px 16px;
+  border: 1px dashed var(--border-color);
+  border-radius: var(--radius-card);
+  text-align: center;
+}
+
+.lemma-hub-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-card);
+  border-radius: var(--radius-xl);
+  font-size: 13px;
+}
+
+.lemma-hub-table th {
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border-color);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  text-align: left;
+  color: var(--text-dim);
+}
+
+.lemma-hub-table td {
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border-subtle);
+  vertical-align: middle;
+  color: var(--text-secondary);
+}
+
+.lemma-hub-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.lemma-hub-table tbody tr {
+  cursor: pointer;
+  transition: background 0.1s ease;
+}
+
+.lemma-hub-table tbody tr:hover {
+  background: var(--bg-secondary);
+}
+
+.lemma-hub-table tbody tr:last-child td:first-child {
+  border-bottom-left-radius: var(--radius-xl);
+}
+
+.lemma-hub-table tbody tr:last-child td:last-child {
+  border-bottom-right-radius: var(--radius-xl);
+}
+
+.lemma-hub-table code {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.lemma-hub-muted {
+  white-space: nowrap;
+  color: var(--text-muted) !important;
+}
+
+.lemma-hub-name-cell {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.lemma-hub-name {
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  font-weight: 600;
+  color: var(--text-primary);
+  text-align: left;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+
+.lemma-hub-name:focus-visible {
+  outline: none;
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-glow);
+}
+
+.lemma-hub-status {
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+
+.lemma-hub-rename {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.lemma-hub-rename .lemma-settings-input {
+  flex: 1;
+  min-width: 0;
+  max-width: 320px;
+}
+
+.lemma-hub-col-actions {
+  width: 48px;
+  text-align: right !important;
+}
+
+.lemma-hub-row-menu {
+  position: relative;
+  display: inline-flex;
+}
+
+.lemma-hub-more-btn {
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.lemma-hub-more-btn:hover:not(:disabled),
+.lemma-hub-more-btn[aria-expanded="true"] {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+
+.lemma-hub-more-btn:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-glow);
+}
+
+.lemma-hub-more-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.lemma-hub-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 20;
+  width: 160px;
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+}
+
+.lemma-hub-menu .lemma-tools-item {
+  font-size: 13px;
+}
+
+.lemma-hub-menu-danger {
+  color: var(--accent-red-text) !important;
+}
+
+@media (max-width: 700px) {
+  .lemma-hub-col-root {
+    display: none;
+  }
+}
+
+.lemma-three-pane-grid[hidden] {
+  display: none;
+}
+
+.lemma-model-manual-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.lemma-model-manual-row .lemma-settings-input {
+  flex: 1 1 260px;
+}
+
+.lemma-model-select-hint {
+  font-size: 11px;
+  color: var(--accent-amber);
+}
+
+/* ResizeHandle (pane splitter) */
+.lemma-resize-handle {
+  flex: 0 0 5px;
+  width: 5px;
+  align-self: stretch;
+  border-radius: 999px;
+  background: transparent;
+  cursor: col-resize;
+  touch-action: none;
+  user-select: none;
+  outline: none;
+  transition: background 0.15s ease;
+}
+
+/* Top-edge (row) variant used by the chat panel. */
+.lemma-resize-handle-horizontal {
+  flex: 0 0 4px;
+  width: auto;
+  height: 4px;
+  cursor: row-resize;
+}
+
+.lemma-resize-handle:hover {
+  background: var(--border-hover);
+}
+
+.lemma-resize-handle:focus-visible {
+  background: var(--border-focus);
+  box-shadow: var(--shadow-glow);
+}
+
+.lemma-resize-handle-active,
+.lemma-resize-handle-active:hover {
+  background: var(--border-hover);
+}
+
+.lemma-resize-handle-disabled {
+  cursor: default;
+  opacity: 0.4;
+  pointer-events: none;
+}
+
+/* Chat bubble (minimised AI assistant) */
+.lemma-chat-bubble {
+  position: absolute;
+  z-index: 50;
+  width: auto;
+  height: 32px;
+  padding: 0 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  border: 1px solid var(--border-color);
+  background: var(--bg-elevated);
+  color: var(--text-secondary);
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: grab;
+  touch-action: none;
+  box-shadow: var(--shadow-sm);
+  transform: translate(var(--bubble-dx, 0px), var(--bubble-dy, 0px));
+  transition: transform 0.2s ease, background 0.15s ease;
+}
+
+.lemma-chat-bubble:focus-visible {
+  outline: none;
+  border-color: var(--border-focus);
+  box-shadow: var(--shadow-glow);
+}
+
+.lemma-chat-bubble-dragging {
+  cursor: grabbing;
+  transition: none;
+  box-shadow: var(--shadow-lg);
+}
+
+.lemma-chat-bubble-tl { top: 16px; left: 16px; }
+.lemma-chat-bubble-tr { top: 16px; right: 16px; }
+.lemma-chat-bubble-bl { bottom: 16px; left: 16px; }
+.lemma-chat-bubble-br { bottom: 16px; right: 16px; }
+
+.lemma-chat-bubble-badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+  border: 1px solid var(--accent-amber);
+  background: var(--accent-amber-subtle);
+  color: var(--accent-amber);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+}
+
+/* Editor jump flash (flashLine.ts) */
+.cm-line.lemma-flash-line {
+  background-color: var(--flash-yellow);
+  animation: lemma-flash-line-fade 1200ms ease-out forwards;
+}
+
+/* Alternate animation name restarts the fade when the same line is flashed again while active. */
+.cm-line.lemma-flash-line.lemma-flash-line-alt {
+  animation-name: lemma-flash-line-fade-alt;
+}
+
+@keyframes lemma-flash-line-fade {
+  from { background-color: var(--flash-yellow); }
+  to { background-color: transparent; }
+}
+
+@keyframes lemma-flash-line-fade-alt {
+  from { background-color: var(--flash-yellow); }
+  to { background-color: transparent; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cm-line.lemma-flash-line {
+    animation: none;
+  }
+}
