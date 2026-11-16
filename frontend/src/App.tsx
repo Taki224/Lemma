@@ -17,7 +17,7 @@ import { VersionHistoryDrawer } from "./components/VersionHistoryDrawer";
 import { ReviewStudioView } from "./components/ReviewStudioView";
 import { ModelsSettingsView } from "./components/ModelsSettingsView";
 import { ProjectsHub } from "./components/ProjectsHub";
-import { EnabledModelsProvider } from "./context/EnabledModelsContext";
+import { EnabledModelsProvider, useEnabledModels, type EnabledModelInfo } from "./context/EnabledModelsContext";
 import { ToolsMenuModal } from "./components/ToolsMenuAndToolbar";
 import { ResizeHandle } from "./components/ResizeHandle";
 import { usePaneLayout, maxWidthFor, MIN_WIDTHS } from "./hooks/usePaneLayout";
@@ -29,6 +29,18 @@ export interface AuthStatusResponse {
   csrf_token: string | null;
   insecure_http_warning: boolean;
   privacy_consent_accepted: boolean;
+}
+
+function EnabledModelsSync({
+  onModelsChange,
+}: {
+  onModelsChange: (models: EnabledModelInfo[]) => void;
+}): null {
+  const { models } = useEnabledModels();
+  useEffect(() => {
+    onModelsChange(models);
+  }, [models, onModelsChange]);
+  return null;
 }
 
 export function App(): React.ReactElement {
@@ -83,6 +95,7 @@ export function App(): React.ReactElement {
     flashOnMountRef.current = false;
   });
   const [manualHunks, setManualHunks] = useState<ProposedHunkItem[]>([]);
+  const enabledModelsRef = useRef<EnabledModelInfo[]>([]);
   const [chats, setChats] = useState<ChatSummary[]>([]);
   // null = the chat pill starts a new chat on its next prompt.
   const [activeChatId, setActiveChatId] = useState<string | null>(null);
@@ -738,6 +751,55 @@ export function App(): React.ReactElement {
     setToolsModalTab((tab) => (tab === utility ? null : utility));
   };
 
+  const handleProposeCompileFix = async (diag: LatexDiagnosticItem) => {
+    const projectId = activeProjectIdRef.current;
+    if (!projectId) {
+      throw new Error("No active project.");
+    }
+    const model = enabledModelsRef.current[0]?.id;
+    if (!model) {
+      throw new Error("No AI model enabled. Enable a model in Settings > Models.");
+    }
+    const token =
+      csrfToken ||
+      (typeof localStorage !== "undefined" ? localStorage.getItem("lemma_csrf_token") || "" : "");
+    const res = await fetch(`/api/projects/${projectId}/compile/autofix`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-CSRF-Token": token,
+      },
+      body: JSON.stringify({
+        diagnostic: {
+          severity: diag.severity,
+          file_path: diag.file_path,
+          line: diag.line ?? null,
+          message: diag.message,
+          context_lines: diag.context_lines || "",
+          missing_package: diag.missing_package ?? null,
+        },
+        model,
+      }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const detail = (data as { detail?: unknown })?.detail;
+      throw new Error(
+        typeof detail === "string" ? detail : `Autofix failed (HTTP ${res.status})`,
+      );
+    }
+    const hunks = Array.isArray((data as { hunks?: unknown }).hunks)
+      ? (data as { hunks: ProposedHunkItem[] }).hunks
+      : [];
+    if (hunks.length === 0) {
+      throw new Error("No automated fix could be generated for this issue.");
+    }
+    setManualHunks((prev) => [...prev, ...hunks]);
+    if (hunks[0]?.file_path) {
+      requestJump(hunks[0].file_path, hunks[0].start_line || 1);
+    }
+  };
+
   const renderWorkspaceTools = () => (
     <div className="lemma-workspace-tools" ref={toolsRef}>
       <button
@@ -1046,6 +1108,7 @@ export function App(): React.ReactElement {
         </main>
       ) : (
         <EnabledModelsProvider>
+        <EnabledModelsSync onModelsChange={(models) => { enabledModelsRef.current = models; }} />
         <div className="lemma-authenticated-workspace">
           {!privacyConsentAccepted && (
             <div className="lemma-modal-backdrop">
@@ -1481,6 +1544,7 @@ export function App(): React.ReactElement {
                   syncNotice={syncNotice}
                   onJumpToLine={requestJump}
                   onSyncJump={(file, line) => requestJump(file, line, { snapToHeading: true })}
+                  onProposeFix={handleProposeCompileFix}
                   onRecompile={handleTriggerCompile}
                 />
               </section>

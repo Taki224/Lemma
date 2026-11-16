@@ -123,7 +123,7 @@ export interface PdfPreviewProps {
   onJumpToLine?: (filePath: string, line: number) => void;
   // Inverse SyncTeX (PDF double-click) jumps; falls back to onJumpToLine when omitted.
   onSyncJump?: (filePath: string, line: number) => void;
-  onProposeFix?: (diagnostic: LatexDiagnosticItem) => void;
+  onProposeFix?: (diagnostic: LatexDiagnosticItem) => void | Promise<void>;
   onRecompile?: () => void;
   isStale?: boolean;
   syncNotice?: string | null;
@@ -143,6 +143,15 @@ export function PdfPreview({
   syncNotice = null,
 }: PdfPreviewProps): React.ReactElement {
   const [dropdownOpen, setDropdownOpen] = useState<boolean>(false);
+  const [ignoreWarnings, setIgnoreWarnings] = useState<boolean>(() => {
+    try {
+      return typeof localStorage !== "undefined" && localStorage.getItem("lemma_ignore_compile_warnings") === "true";
+    } catch {
+      return false;
+    }
+  });
+  const [fixingIdx, setFixingIdx] = useState<number | null>(null);
+  const [fixError, setFixError] = useState<string | null>(null);
   const [zoomScale, setZoomScale] = useState<number>(1.0);
   const [outputScale, setOutputScale] = useState<number>(readPdfOutputScale);
 
@@ -416,6 +425,35 @@ export function PdfPreview({
   );
 
   const errorCount = diagnostics.filter((d) => d.severity === "error").length;
+  const warningCount = diagnostics.length - errorCount;
+  const visibleDiagnostics = ignoreWarnings
+    ? diagnostics.filter((d) => d.severity === "error")
+    : diagnostics;
+  const ignoredWarningCount = ignoreWarnings ? warningCount : 0;
+
+  const handleToggleIgnoreWarnings = (checked: boolean) => {
+    setIgnoreWarnings(checked);
+    try {
+      if (typeof localStorage !== "undefined") {
+        localStorage.setItem("lemma_ignore_compile_warnings", checked ? "true" : "false");
+      }
+    } catch {
+      // Ignore storage failures in restricted contexts.
+    }
+  };
+
+  const handleProposeFixClick = async (diag: LatexDiagnosticItem, idx: number) => {
+    if (!onProposeFix || fixingIdx !== null) return;
+    setFixError(null);
+    setFixingIdx(idx);
+    try {
+      await onProposeFix(diag);
+    } catch (err) {
+      setFixError(err instanceof Error ? err.message : "Failed to propose a fix.");
+    } finally {
+      setFixingIdx(null);
+    }
+  };
 
   const STATUS_LABELS: Record<string, string> = {
     compiling: "Compiling...",
@@ -540,17 +578,36 @@ export function PdfPreview({
           role="region"
           aria-label="Compile Diagnostics"
         >
-          {diagnostics.length === 0 ? (
+          {(warningCount > 0 || ignoreWarnings) && (
+            <div className="lemma-compile-diagnostics-header">
+              <label className="lemma-ignore-warnings-toggle">
+                <input
+                  type="checkbox"
+                  checked={ignoreWarnings}
+                  onChange={(e) => handleToggleIgnoreWarnings(e.target.checked)}
+                />
+                <span>Ignore warnings</span>
+              </label>
+            </div>
+          )}
+          {fixError && (
+            <div className="lemma-diag-fix-error" role="alert">
+              {fixError}
+            </div>
+          )}
+          {visibleDiagnostics.length === 0 ? (
             <p>
               {status === "failed"
                 ? "Compilation failed. No specific line diagnostics were produced by the compiler."
                 : status === "timeout"
                 ? "Compilation timed out before generating diagnostics."
+                : ignoredWarningCount > 0
+                ? `No compile errors (${ignoredWarningCount} ${ignoredWarningCount === 1 ? "warning" : "warnings"} ignored).`
                 : "No compile errors or warnings."}
             </p>
           ) : (
             <ul>
-              {diagnostics.map((diag, idx) => (
+              {visibleDiagnostics.map((diag, idx) => (
                 <li key={idx} className={`lemma-diag-row severity-${diag.severity}`}>
                   <div className="lemma-diag-summary">
                     <strong>
@@ -576,9 +633,12 @@ export function PdfPreview({
                         type="button"
                         className="lemma-btn lemma-btn-primary lemma-btn-xs"
                         aria-label="Propose fix"
-                        onClick={() => onProposeFix(diag)}
+                        disabled={fixingIdx !== null}
+                        onClick={() => {
+                          void handleProposeFixClick(diag, idx);
+                        }}
                       >
-                        Propose fix
+                        {fixingIdx === idx ? "Proposing..." : "Propose fix"}
                       </button>
                     )}
                   </div>

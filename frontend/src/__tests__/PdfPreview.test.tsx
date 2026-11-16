@@ -49,6 +49,53 @@ test("test_compile_error_dropdown_renders_diagnostics_and_propose_fix_button", (
   expect(onProposeFix).toHaveBeenCalledWith(diagnostics[0]);
 });
 
+test("test_compile_diagnostics_ignore_warnings_toggle_and_propose_fix_error", async () => {
+  localStorage.removeItem("lemma_ignore_compile_warnings");
+  const onProposeFix = vi.fn().mockRejectedValueOnce(new Error("Model unavailable"));
+  const diagnostics = [
+    {
+      severity: "typesetting" as const,
+      file_path: "template.tex",
+      line: 168,
+      message: "Overfull \\hbox (2.32pt too wide)",
+      context_lines: "",
+    },
+    {
+      severity: "warning" as const,
+      file_path: "template.tex",
+      line: 20,
+      message: "Reference `sec:foo' undefined",
+      context_lines: "",
+    },
+  ];
+
+  render(
+    <PdfPreview
+      projectId="manuscript-2026"
+      status="success"
+      pdfUrl="/api/projects/manuscript-2026/pdf"
+      diagnostics={diagnostics}
+      onProposeFix={onProposeFix}
+    />
+  );
+
+  fireEvent.click(screen.getByRole("button", { name: /Compiled/i }));
+  expect(screen.getByText(/Overfull/i)).toBeInTheDocument();
+  expect(screen.getByText(/Reference `sec:foo' undefined/i)).toBeInTheDocument();
+
+  const fixBtns = screen.getAllByRole("button", { name: /Propose fix/i });
+  fireEvent.click(fixBtns[0]);
+  await waitFor(() => {
+    expect(screen.getByRole("alert")).toHaveTextContent("Model unavailable");
+  });
+
+  const ignoreCheckbox = screen.getByRole("checkbox", { name: /Ignore warnings/i });
+  fireEvent.click(ignoreCheckbox);
+  expect(screen.queryByText(/Overfull/i)).toBeNull();
+  expect(screen.getByText(/No compile errors \(2 warnings ignored\)/i)).toBeInTheDocument();
+  localStorage.removeItem("lemma_ignore_compile_warnings");
+});
+
 test("test_pdf_click_triggers_inverse_synctex_and_fallback_hint", async () => {
   const onJumpToLine = vi.fn();
   const fetchMock = vi.fn(async (url: string) => {

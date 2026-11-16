@@ -452,8 +452,6 @@ export function LatexEditor({
     }
   };
 
-  const fileDiagnostics = diagnostics.filter((d) => d.file_path === filePath);
-
   const zoteroBannerDescId = "lemma-zotero-sync-banner-desc";
 
   return (
@@ -535,16 +533,6 @@ export function LatexEditor({
         aria-readonly={effectiveReadOnly ? "true" : undefined}
         aria-describedby={isZoteroSynced ? zoteroBannerDescId : undefined}
       />
-
-      {fileDiagnostics.length > 0 && (
-        <ul className="lemma-inline-diagnostics" aria-label="Editor Diagnostics">
-          {fileDiagnostics.map((diag, idx) => (
-            <li key={idx} className={`diag-${diag.severity}`}>
-              Line {diag.line ?? "?"}: {diag.message}
-            </li>
-          ))}
-        </ul>
-      )}
 
       {conflictState && (
         <div
