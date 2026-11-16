@@ -831,3 +831,67 @@ test("test_pdf_statistics_read_no_pdf_until_a_file_exists", () => {
   expect(screen.getByTestId("pdf-statistics").textContent).toBe("No PDF");
   expect(screen.queryByTestId("pdf-statistics-panel")).toBeNull();
 });
+
+test("test_ctrl_f_opens_pdf_find_bar_and_highlights_matches", async () => {
+  const originalOpen = pdfDocumentLoader.open;
+  pdfDocumentLoader.open = () => ({
+    promise: Promise.resolve({
+      numPages: 1,
+      destroy() {},
+      getPage: async () => ({
+        getViewport() {
+          return {
+            width: 612,
+            height: 792,
+            convertToViewportRectangle: ([x1, y1, x2, y2]: [number, number, number, number]) => [
+              x1,
+              792 - y2,
+              x2,
+              792 - y1,
+            ],
+          };
+        },
+        render() {
+          return { promise: Promise.resolve(), cancel() {} };
+        },
+        getTextContent: async () => ({
+          items: [
+            { str: "Theorem one and theorem two", transform: [1, 0, 0, 1, 50, 700], width: 200, height: 12 },
+          ],
+        }),
+      }),
+    }),
+  });
+
+  try {
+    const { container } = render(
+      <PdfPreview
+        projectId="manuscript-2026"
+        status="success"
+        pdfUrl="/api/projects/manuscript-2026/pdf"
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId("pdf-statistics").textContent).toContain("5 words");
+    });
+
+    const pane = container.querySelector(".lemma-pdf-preview-pane") as HTMLElement;
+    fireEvent.keyDown(pane, { key: "f", ctrlKey: true });
+
+    const input = screen.getByRole("textbox", { name: "Find in PDF" });
+    fireEvent.change(input, { target: { value: "theorem" } });
+
+    expect(screen.getByTestId("find-match-count").textContent).toBe("1 of 2");
+    expect(screen.getAllByTestId("pdf-search-highlight-active")).toHaveLength(1);
+    expect(screen.getAllByTestId("pdf-search-highlight")).toHaveLength(1);
+
+    fireEvent.click(screen.getByRole("button", { name: "Next match" }));
+    expect(screen.getByTestId("find-match-count").textContent).toBe("2 of 2");
+
+    fireEvent.keyDown(input, { key: "Escape" });
+    expect(screen.queryByTestId("find-bar-pdf")).toBeNull();
+  } finally {
+    pdfDocumentLoader.open = originalOpen;
+  }
+});

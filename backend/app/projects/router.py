@@ -283,6 +283,7 @@ async def read_project_file(
         "path": result.path,
         "content": result.text,
         "etag": result.etag,
+        "is_binary": result.is_binary,
     }
 
 

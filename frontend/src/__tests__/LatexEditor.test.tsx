@@ -433,6 +433,35 @@ test("test_draft_content_shown_and_still_dirty_on_mount", async () => {
   }
 });
 
+test("test_ctrl_f_opens_editor_find_bar_and_navigates_matches", () => {
+  render(
+    <LatexEditor
+      projectId="manuscript-2026"
+      filePath="main.tex"
+      initialContent={"Alpha beta\nGamma alpha\nALPHA delta\n"}
+      initialEtag="etag-v1"
+      diagnostics={[]}
+    />
+  );
+
+  const editorRoot = screen.getByTestId("codemirror-container");
+  fireEvent.keyDown(editorRoot, { key: "f", ctrlKey: true });
+
+  const input = screen.getByRole("textbox", { name: "Find in Editor" });
+  fireEvent.change(input, { target: { value: "alpha" } });
+
+  expect(screen.getByTestId("find-match-count").textContent).toBe("1 of 3");
+
+  fireEvent.click(screen.getByRole("button", { name: "Next match" }));
+  expect(screen.getByTestId("find-match-count").textContent).toBe("2 of 3");
+
+  fireEvent.click(screen.getByRole("button", { name: "Match case" }));
+  expect(screen.getByTestId("find-match-count").textContent).toBe("1 of 1");
+
+  fireEvent.keyDown(input, { key: "Escape" });
+  expect(screen.queryByTestId("find-bar-editor")).toBeNull();
+});
+
 test("test_returning_to_a_dirty_file_restores_its_draft", async () => {
   const h = await captureFlashView();
   try {
@@ -612,4 +641,33 @@ test("test_zotero_connected_bib_shows_banner_with_disconnect_and_sync_and_locks_
   } finally {
     h.restore();
   }
+});
+
+test("test_ctrl_f_opens_editor_find_bar_and_navigates_matches", () => {
+  render(
+    <LatexEditor
+      projectId="manuscript-2026"
+      filePath="main.tex"
+      initialContent={"Alpha beta\nGamma alpha\nALPHA delta\n"}
+      initialEtag="etag-v1"
+      diagnostics={[]}
+    />
+  );
+
+  const editorRoot = screen.getByTestId("codemirror-container");
+  fireEvent.keyDown(editorRoot, { key: "f", ctrlKey: true });
+
+  const input = screen.getByRole("textbox", { name: "Find in Editor" });
+  fireEvent.change(input, { target: { value: "alpha" } });
+
+  expect(screen.getByTestId("find-match-count").textContent).toBe("1 of 3");
+
+  fireEvent.click(screen.getByRole("button", { name: "Next match" }));
+  expect(screen.getByTestId("find-match-count").textContent).toBe("2 of 3");
+
+  fireEvent.click(screen.getByRole("button", { name: "Match case" }));
+  expect(screen.getByTestId("find-match-count").textContent).toBe("1 of 1");
+
+  fireEvent.keyDown(input, { key: "Escape" });
+  expect(screen.queryByTestId("find-bar-editor")).toBeNull();
 });
