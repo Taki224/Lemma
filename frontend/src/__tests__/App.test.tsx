@@ -607,6 +607,63 @@ test("test_successful_compile_clears_stale", async () => {
   });
 });
 
+test("test_recompile_saves_dirty_tex_file_before_compiling", async () => {
+  await withEditorEditCapture(async (capture) => {
+    const callOrder: string[] = [];
+    const baseMock = makeForwardSyncFetchMock(() => ({ ok: true, status: 200, json: async () => exactForwardBox }));
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      const method = init?.method ?? "GET";
+      if (url === "/api/projects/manuscript-2026/files/main.tex" && method === "PUT") {
+        callOrder.push(`PUT:${JSON.parse(String(init?.body)).content}`);
+        return { ok: true, status: 200, json: async () => ({ etag: "e2" }) };
+      }
+      if (url === "/api/projects/manuscript-2026/compile" && method === "POST") {
+        callOrder.push("COMPILE");
+      }
+      return baseMock(url, init);
+    });
+    await renderAppWithPdf(fetchMock);
+    await simulateEditorEdit(capture, "hello edited");
+    await waitFor(() => {
+      expect(stalePane().getAttribute("data-stale")).toBe("true");
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Recompile" }));
+    await waitFor(() => {
+      expect(stalePane().getAttribute("data-stale")).toBe(null);
+    });
+    expect(callOrder).toEqual(["PUT:hello edited", "COMPILE"]);
+  });
+});
+
+test("test_recompile_aborts_compile_when_save_fails", async () => {
+  await withEditorEditCapture(async (capture) => {
+    const callOrder: string[] = [];
+    const baseMock = makeForwardSyncFetchMock(() => ({ ok: true, status: 200, json: async () => exactForwardBox }));
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      const method = init?.method ?? "GET";
+      if (url === "/api/projects/manuscript-2026/files/main.tex" && method === "PUT") {
+        callOrder.push("PUT");
+        return { ok: false, status: 500, json: async () => ({ detail: "Save failed" }) };
+      }
+      if (url === "/api/projects/manuscript-2026/compile" && method === "POST") {
+        callOrder.push("COMPILE");
+      }
+      return baseMock(url, init);
+    });
+    await renderAppWithPdf(fetchMock);
+    await simulateEditorEdit(capture, "hello edited");
+    await waitFor(() => {
+      expect(stalePane().getAttribute("data-stale")).toBe("true");
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Recompile" }));
+    await waitFor(() => {
+      expect(callOrder).toEqual(["PUT"]);
+      expect(screen.getByRole("button", { name: "Recompile" })).not.toBeDisabled();
+    });
+    expect(stalePane().getAttribute("data-stale")).toBe("true");
+  });
+});
+
 test("test_success_passes_width_height_nonce_to_pdf_preview", async () => {
   const fetchMock = makeForwardSyncFetchMock(() => ({
     ok: true,

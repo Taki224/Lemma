@@ -478,11 +478,54 @@ export function App(): React.ReactElement {
     }
   };
 
+  const saveDirtyBuffers = async (actionLabel: string) => {
+    if (githubReloadBlockedRef.current) {
+      throw new Error("Reload this project before syncing. The last pull did not refresh the editor.");
+    }
+    const projectId = activeProjectIdRef.current;
+    if (!projectId) return;
+    const pending = { ...dirtyBuffersRef.current };
+    const entries = Object.entries(pending);
+    if (entries.length === 0) return;
+    const token = csrfToken || (typeof localStorage !== "undefined" ? localStorage.getItem("lemma_csrf_token") || "" : "");
+    const timeout = typeof AbortSignal !== "undefined" && typeof AbortSignal.timeout === "function"
+      ? AbortSignal.timeout(30000)
+      : undefined;
+    for (const [path, content] of entries) {
+      const res = await fetch(`/api/projects/${projectId}/files/${path}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          "X-CSRF-Token": token,
+        },
+        body: JSON.stringify({ content }),
+        signal: timeout,
+      });
+      if (!res.ok) throw new Error(`Could not save ${path} before ${actionLabel}.`);
+      const saved = (await res.json().catch(() => ({}))) as { etag?: string };
+      if (path === activeFileRef.current) {
+        if (typeof saved.etag === "string") setFileEtag(saved.etag);
+        const latest = dirtyBuffersRef.current[path];
+        if (latest === undefined || latest === content) setFileContent(content);
+      }
+    }
+    setDirtyBuffers((prev) => {
+      const next = { ...prev };
+      for (const [path, content] of entries) {
+        if (next[path] === content) delete next[path];
+      }
+      return next;
+    });
+  };
+
+  const saveDirtyBuffersBeforeSync = () => saveDirtyBuffers("syncing");
+
   const handleTriggerCompile = async () => {
     if (!activeProject) return;
     const token = csrfToken || localStorage.getItem("lemma_csrf_token") || "";
     setCompileStatus("compiling");
     try {
+      await saveDirtyBuffers("compiling");
       const res = await fetch(`/api/projects/${activeProject.project_id}/compile`, {
         method: "POST",
         headers: {
@@ -503,44 +546,6 @@ export function App(): React.ReactElement {
     } catch {
       setCompileStatus("failed");
     }
-  };
-
-  const saveDirtyBuffersBeforeSync = async () => {
-    if (githubReloadBlockedRef.current) {
-      throw new Error("Reload this project before syncing. The last pull did not refresh the editor.");
-    }
-    const projectId = activeProjectIdRef.current;
-    if (!projectId) return;
-    const token = csrfToken || (typeof localStorage !== "undefined" ? localStorage.getItem("lemma_csrf_token") || "" : "");
-    const timeout = typeof AbortSignal !== "undefined" && typeof AbortSignal.timeout === "function"
-      ? AbortSignal.timeout(30000)
-      : undefined;
-    const pending = { ...dirtyBuffersRef.current };
-    for (const [path, content] of Object.entries(pending)) {
-      const res = await fetch(`/api/projects/${projectId}/files/${path}`, {
-        method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-          "X-CSRF-Token": token,
-        },
-        body: JSON.stringify({ content }),
-        signal: timeout,
-      });
-      if (!res.ok) throw new Error(`Could not save ${path} before syncing.`);
-      const saved = (await res.json().catch(() => ({}))) as { etag?: string };
-      if (typeof saved.etag === "string" && path === activeFileRef.current) {
-        setFileEtag(saved.etag);
-        const latest = dirtyBuffersRef.current[path];
-        if (latest === undefined || latest === content) setFileContent(content);
-      }
-    }
-    setDirtyBuffers((prev) => {
-      const next = { ...prev };
-      for (const [path, content] of Object.entries(pending)) {
-        if (next[path] === content) delete next[path];
-      }
-      return next;
-    });
   };
 
   const reloadAfterGithubPull = async (pulledProjectId: string) => {
@@ -700,6 +705,15 @@ export function App(): React.ReactElement {
   };
 
   const handleDirtyChange = (path: string, content: string | null) => {
+    if (content === null) {
+      if (path in dirtyBuffersRef.current) {
+        const next = { ...dirtyBuffersRef.current };
+        delete next[path];
+        dirtyBuffersRef.current = next;
+      }
+    } else {
+      dirtyBuffersRef.current = { ...dirtyBuffersRef.current, [path]: content };
+    }
     setDirtyBuffers((prev) => {
       if (content === null) {
         if (!(path in prev)) return prev;
