@@ -44,7 +44,7 @@ test("test_compile_error_dropdown_renders_diagnostics_and_propose_fix_button", (
   fireEvent.click(jumpBtn);
   expect(onJumpToLine).toHaveBeenCalledWith("chapters/intro.tex", 42);
 
-  const fixBtn = screen.getByRole("button", { name: /Propose fix/i });
+  const fixBtn = screen.getByRole("button", { name: /Fix in chat/i });
   fireEvent.click(fixBtn);
   expect(onProposeFix).toHaveBeenCalledWith(diagnostics[0]);
 });
@@ -83,7 +83,7 @@ test("test_compile_diagnostics_ignore_warnings_toggle_and_propose_fix_error", as
   expect(screen.getByText(/Overfull/i)).toBeInTheDocument();
   expect(screen.getByText(/Reference `sec:foo' undefined/i)).toBeInTheDocument();
 
-  const fixBtns = screen.getAllByRole("button", { name: /Propose fix/i });
+  const fixBtns = screen.getAllByRole("button", { name: /Fix in chat/i });
   fireEvent.click(fixBtns[0]);
   await waitFor(() => {
     expect(screen.getByRole("alert")).toHaveTextContent("Model unavailable");
