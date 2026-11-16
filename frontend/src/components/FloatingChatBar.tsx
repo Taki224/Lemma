@@ -197,6 +197,8 @@ export interface FloatingChatBarProps {
   chatId?: string | null;
   // Bumped when the user picks a chat elsewhere (sidebar), so a minimised pill reopens.
   chatSelectNonce?: number;
+  // Draft prompt injected from outside (e.g. "Fix in chat" on a compile diagnostic), with a nonce so repeated clicks re-apply.
+  draftPrompt?: { text: string; nonce: number; referenceFile?: string } | null;
   // A reply was stored in this chat (new or existing); shown = the pill still displays it.
   onChatActivity?: (chatId: string, shown: boolean) => void;
   onNewChat?: () => void;
@@ -342,6 +344,7 @@ export function FloatingChatBar({
   bufferText,
   chatId,
   chatSelectNonce,
+  draftPrompt,
   onChatActivity,
   onNewChat,
   projectFiles = [],
@@ -521,6 +524,19 @@ export function FloatingChatBar({
   useEffect(() => {
     if (chatSelectNonce) setMinimised(false);
   }, [chatSelectNonce]);
+
+  useEffect(() => {
+    if (!draftPrompt?.nonce) return;
+    setMinimised(false);
+    setPromptText(draftPrompt.text);
+    const refFile = draftPrompt.referenceFile;
+    if (refFile && projectFiles.includes(refFile)) {
+      setReferences((prev) => (prev.includes(refFile) ? prev : [...prev, refFile]));
+    }
+    requestAnimationFrame(() => {
+      promptRef.current?.focus();
+    });
+  }, [draftPrompt?.nonce]);
   const [includeQuarantined, setIncludeQuarantined] = useState<boolean>(false);
   const [references, setReferences] = useState<string[]>([]);
   // Files attached to this chat only, by name; stored outside the project.

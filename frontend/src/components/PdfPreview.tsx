@@ -632,13 +632,13 @@ export function PdfPreview({
                       <button
                         type="button"
                         className="lemma-btn lemma-btn-primary lemma-btn-xs"
-                        aria-label="Propose fix"
+                        aria-label="Fix in chat"
                         disabled={fixingIdx !== null}
                         onClick={() => {
                           void handleProposeFixClick(diag, idx);
                         }}
                       >
-                        {fixingIdx === idx ? "Proposing..." : "Propose fix"}
+                        {fixingIdx === idx ? "Proposing..." : "Fix in chat"}
                       </button>
                     )}
                   </div>
