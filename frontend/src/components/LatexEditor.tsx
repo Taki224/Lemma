@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
 import { EditorState } from "@codemirror/state";
 import { EditorView, lineNumbers } from "@codemirror/view";
 import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
@@ -8,6 +8,8 @@ import { findHeadingLineAtOrAboveBy } from "../utils/headingLine";
 import type { BibEntry } from "../utils/bibParser";
 import { citationAutocompleteExtension } from "./citationAutocomplete";
 import { cancelFlash, flashLine, flashLineExtension } from "./flashLine";
+import { applyEditorSearch, editorSearchExtension, findTextMatches } from "./editorSearch";
+import { PaneFindBar } from "./PaneFindBar";
 import {
   type DiffHunkActions,
   type ProposedHunkItem,
@@ -186,6 +188,31 @@ export function LatexEditor({
   }, [contentReady, filePath, content, activeLine, selectedRange]);
 
   const [isSaving, setIsSaving] = useState<boolean>(false);
+  const [searchOpen, setSearchOpen] = useState<boolean>(false);
+  const [searchQuery, setSearchQuery] = useState<string>("");
+  const [searchCaseSensitive, setSearchCaseSensitive] = useState<boolean>(false);
+  const [searchMatchIndex, setSearchMatchIndex] = useState<number>(0);
+  const [searchFocusNonce, setSearchFocusNonce] = useState<number>(0);
+  const shouldScrollSearchRef = useRef<boolean>(false);
+
+  const searchMatches = useMemo(
+    () => (searchOpen ? findTextMatches(content, searchQuery, searchCaseSensitive) : []),
+    [searchOpen, content, searchQuery, searchCaseSensitive]
+  );
+  const activeSearchIndex =
+    searchMatches.length === 0 ? 0 : Math.min(searchMatchIndex, searchMatches.length - 1);
+
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view) return;
+    applyEditorSearch(
+      view,
+      searchOpen ? searchMatches : [],
+      activeSearchIndex,
+      searchOpen && shouldScrollSearchRef.current
+    );
+    shouldScrollSearchRef.current = false;
+  }, [searchOpen, searchMatches, activeSearchIndex, filePath]);
 
   useEffect(() => {
     const switchedFile = loadedFilePathRef.current !== filePath;
@@ -271,6 +298,7 @@ export function LatexEditor({
         ),
         inlineDiffExtension(fileHunks, hunkActions),
         flashLineExtension(),
+        editorSearchExtension(),
         EditorView.theme({
           "&": { backgroundColor: "transparent", color: "var(--text-primary)" },
           ".cm-content": { caretColor: "var(--text-primary)" },
@@ -445,7 +473,42 @@ export function LatexEditor({
     }
   };
 
+  const openSearch = () => {
+    if (
+      !searchOpen &&
+      selectedRange &&
+      !selectedRange.text.includes("\n") &&
+      selectedRange.text.length <= 120
+    ) {
+      setSearchQuery(selectedRange.text);
+      setSearchMatchIndex(0);
+      shouldScrollSearchRef.current = true;
+    }
+    setSearchOpen(true);
+    setSearchFocusNonce((n) => n + 1);
+  };
+
+  const closeSearch = () => {
+    setSearchOpen(false);
+    viewRef.current?.focus();
+  };
+
+  const stepSearchMatch = (delta: number) => {
+    if (searchMatches.length === 0) return;
+    shouldScrollSearchRef.current = true;
+    setSearchMatchIndex((idx) => {
+      const len = searchMatches.length;
+      return (((idx + delta) % len) + len) % len;
+    });
+  };
+
   const handleKeyDown = (e: React.KeyboardEvent) => {
+    if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === "f") {
+      e.preventDefault();
+      e.stopPropagation();
+      openSearch();
+      return;
+    }
     if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "s") {
       e.preventDefault();
       handleSave(true);
@@ -472,6 +535,15 @@ export function LatexEditor({
           <button
             type="button"
             className="lemma-btn lemma-btn-secondary lemma-btn-xs"
+            aria-label="Find in editor"
+            title="Find in editor (Cmd/Ctrl+F)"
+            onClick={openSearch}
+          >
+            Find
+          </button>
+          <button
+            type="button"
+            className="lemma-btn lemma-btn-secondary lemma-btn-xs"
             aria-label="Show in PDF"
             disabled={!pdfAvailable}
             title={pdfAvailable ? "Show in PDF (Cmd/Ctrl+Click)" : "Compile first"}
@@ -485,6 +557,31 @@ export function LatexEditor({
           </button>
         </div>
       </div>
+
+      {searchOpen && (
+        <PaneFindBar
+          paneLabel="Editor"
+          query={searchQuery}
+          onQueryChange={(q) => {
+            shouldScrollSearchRef.current = true;
+            setSearchQuery(q);
+            setSearchMatchIndex(0);
+          }}
+          caseSensitive={searchCaseSensitive}
+          onToggleCaseSensitive={() => {
+            shouldScrollSearchRef.current = true;
+            setSearchCaseSensitive((c) => !c);
+            setSearchMatchIndex(0);
+          }}
+          matchCount={searchMatches.length}
+          activeIndex={activeSearchIndex}
+          onNext={() => stepSearchMatch(1)}
+          onPrev={() => stepSearchMatch(-1)}
+          onClose={closeSearch}
+          focusNonce={searchFocusNonce}
+          placeholder="Find in file..."
+        />
+      )}
 
       {isZoteroSynced && (
         <div

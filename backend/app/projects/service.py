@@ -37,6 +37,47 @@ ALLOWED_EXTENSIONS = frozenset(
     }
 )
 
+BINARY_EXTENSIONS = frozenset(
+    {
+        ".png",
+        ".jpg",
+        ".jpeg",
+        ".gif",
+        ".webp",
+        ".bmp",
+        ".ico",
+        ".tiff",
+        ".tif",
+        ".pdf",
+        ".eps",
+        ".zip",
+        ".gz",
+        ".tar",
+        ".woff",
+        ".woff2",
+        ".ttf",
+        ".otf",
+        ".exe",
+        ".dll",
+        ".so",
+        ".dylib",
+        ".bin",
+        ".pyc",
+    }
+)
+
+
+def _is_binary_content(raw_bytes: bytes, suffix: str) -> bool:
+    if suffix.lower() in BINARY_EXTENSIONS:
+        return True
+    if b"\x00" in raw_bytes[:8192]:
+        return True
+    try:
+        raw_bytes.decode("utf-8")
+    except UnicodeDecodeError:
+        return True
+    return False
+
 BLANK_MAIN_TEX = """\\documentclass{article}
 \\usepackage[utf8]{inputenc}
 \\title{Untitled Document}
@@ -94,6 +135,7 @@ class FileContentWithETag:
     content: bytes
     text: str
     etag: str
+    is_binary: bool = False
 
 
 @dataclass(frozen=True)
@@ -433,13 +475,15 @@ class ProjectService:
             raise FileNotFoundError(f"File not found: {rel_path}")
         raw_bytes = target.read_bytes()
         etag = _compute_etag(raw_bytes)
-        text = raw_bytes.decode("utf-8", errors="replace")
+        is_binary = _is_binary_content(raw_bytes, target.suffix)
+        text = "" if is_binary else raw_bytes.decode("utf-8", errors="replace")
         rel_posix = target.relative_to(project_dir.resolve()).as_posix()
         return FileContentWithETag(
             path=rel_posix,
             content=raw_bytes,
             text=text,
             etag=etag,
+            is_binary=is_binary,
         )
 
     def write_file(

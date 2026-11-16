@@ -1843,3 +1843,83 @@ test("test_zotero_connected_references_bib_locks_editing_syncs_and_disconnects_w
     expect(view().state.doc.toString()).toContain("% manual comment");
   });
 });
+
+test("test_binary_file_shows_no_preview_placeholder_and_pane_ctrl_f_is_isolated", async () => {
+  const fetchMock = vi.fn(async (url: string) => {
+    if (url === "/api/auth/status") {
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          authenticated: true,
+          csrf_token: "csrf-1",
+          insecure_http_warning: false,
+          privacy_consent_accepted: true,
+        }),
+      };
+    }
+    if (url === "/api/projects") {
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          projects: [
+            {
+              project_id: "proj-1",
+              name: "Paper",
+              root_tex: "main.tex",
+              zotero_collection_key: null,
+              created_at: "2026-01-01T00:00:00Z",
+              updated_at: "2026-01-01T00:00:00Z",
+            },
+          ],
+        }),
+      };
+    }
+    if (url === "/api/projects/proj-1/files") {
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          files: [
+            { path: "main.tex", name: "main.tex", is_dir: false, size_bytes: 20 },
+            { path: "figure.jpg", name: "figure.jpg", is_dir: false, size_bytes: 1024 },
+          ],
+          folders: [],
+        }),
+      };
+    }
+    if (url === "/api/projects/proj-1/files/main.tex") {
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ path: "main.tex", content: "Hello LaTeX", etag: "e1", is_binary: false }),
+      };
+    }
+    if (url === "/api/projects/proj-1/files/figure.jpg") {
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ path: "figure.jpg", content: "", etag: "e2", is_binary: true }),
+      };
+    }
+    return { ok: true, status: 200, json: async () => ({}) };
+  });
+
+  vi.stubGlobal("fetch", fetchMock);
+  render(<App />);
+
+  fireEvent.click(await screen.findByRole("button", { name: "Open Paper" }));
+  await screen.findByTestId("codemirror-container");
+
+  // Ctrl+F in editor pane opens only editor find bar
+  fireEvent.keyDown(screen.getByTestId("codemirror-container"), { key: "f", ctrlKey: true });
+  expect(screen.getByTestId("find-bar-editor")).toBeInTheDocument();
+  expect(screen.queryByTestId("find-bar-pdf")).toBeNull();
+
+  // Opening figure.jpg shows binary placeholder instead of editor
+  fireEvent.click(screen.getByRole("button", { name: "figure.jpg" }));
+  const placeholder = await screen.findByTestId("binary-file-placeholder");
+  expect(placeholder.textContent).toContain("No preview available for this file");
+  expect(screen.queryByTestId("codemirror-container")).toBeNull();
+});

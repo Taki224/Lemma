@@ -1,6 +1,13 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
 import * as pdfjsLib from "pdfjs-dist";
 import type { LatexDiagnosticItem } from "./LatexEditor";
+import { PaneFindBar } from "./PaneFindBar";
+import {
+  computeMatchRects,
+  findPdfMatches,
+  type PdfHighlightRect,
+  type PdfTextItemWithGeometry,
+} from "./pdfSearch";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
   "pdfjs-dist/build/pdf.worker.min.mjs",
@@ -220,6 +227,15 @@ export function PdfPreview({
   const toastText = visibleSyncNotice ?? fallbackToast;
 
   const [pdfDoc, setPdfDoc] = useState<any>(null);
+  const [pageTextItems, setPageTextItems] = useState<PdfTextItemWithGeometry[][]>([]);
+  const [searchOpen, setSearchOpen] = useState<boolean>(false);
+  const [searchQuery, setSearchQuery] = useState<string>("");
+  const [searchCaseSensitive, setSearchCaseSensitive] = useState<boolean>(false);
+  const [searchMatchIndex, setSearchMatchIndex] = useState<number>(0);
+  const [searchFocusNonce, setSearchFocusNonce] = useState<number>(0);
+  const shouldScrollSearchRef = useRef<boolean>(false);
+  const activeHighlightRef = useRef<HTMLDivElement | null>(null);
+  const pdfPagesRef = useRef<Map<number, any>>(new Map());
   const loadingTaskRef = useRef<any>(null);
   const renderTasksRef = useRef<Map<number, any>>(new Map());
   const viewportContainerRef = useRef<HTMLDivElement | null>(null);
@@ -244,7 +260,9 @@ export function PdfPreview({
   useEffect(() => {
     if (!pdfUrl) {
       pdfDocUrlRef.current = null;
+      pdfPagesRef.current.clear();
       setPdfDoc(null);
+      setPageTextItems([]);
       setPageCount(1);
       setTextStats(null);
       setStatsState("idle");
@@ -313,10 +331,11 @@ export function PdfPreview({
       typeof pdfDoc.numPages === "number" && pdfDoc.numPages > 0 ? pdfDoc.numPages : pageCount;
 
     (async () => {
-      const itemsByPage: PdfTextItemLike[][] = [];
+      const itemsByPage: PdfTextItemWithGeometry[][] = [];
       for (let pageNum = 1; pageNum <= pages; pageNum++) {
         const page = await pdfDoc.getPage(pageNum);
         if (cancelled) return;
+        pdfPagesRef.current.set(pageNum, page);
         if (!page || typeof page.getTextContent !== "function") {
           setTextStats(null);
           setStatsState("unavailable");
@@ -326,10 +345,12 @@ export function PdfPreview({
         if (cancelled) return;
         itemsByPage.push(Array.isArray(content?.items) ? content.items : []);
       }
+      setPageTextItems(itemsByPage);
       setTextStats(statsFromTextItems(itemsByPage));
       setStatsState("ready");
     })().catch(() => {
       if (!cancelled) {
+        setPageTextItems([]);
         setTextStats(null);
         setStatsState("unavailable");
       }
@@ -419,6 +440,86 @@ export function PdfPreview({
     };
   }, [pdfUrl]);
 
+  const searchMatches = useMemo(
+    () => (searchOpen && pdfUrl ? findPdfMatches(pageTextItems, searchQuery, searchCaseSensitive) : []),
+    [searchOpen, pdfUrl, pageTextItems, searchQuery, searchCaseSensitive]
+  );
+  const activeSearchIndex =
+    searchMatches.length === 0 ? 0 : Math.min(searchMatchIndex, searchMatches.length - 1);
+
+  const searchHighlightsByPage = useMemo(() => {
+    const byPage = new Map<number, Array<{ rect: PdfHighlightRect; isActive: boolean }>>();
+    if (!searchOpen || !pdfUrl || searchMatches.length === 0) return byPage;
+    const viewportCache = new Map<number, any>();
+    for (let i = 0; i < searchMatches.length; i++) {
+      const match = searchMatches[i];
+      let vp = viewportCache.get(match.pageNum);
+      if (vp === undefined) {
+        const page = pdfPagesRef.current.get(match.pageNum);
+        vp =
+          page && typeof page.getViewport === "function"
+            ? page.getViewport({ scale: zoomScale, rotation })
+            : null;
+        viewportCache.set(match.pageNum, vp);
+      }
+      const rects = computeMatchRects(pageTextItems[match.pageNum - 1] ?? [], match.spans, vp);
+      if (rects.length === 0) continue;
+      let list = byPage.get(match.pageNum);
+      if (!list) {
+        list = [];
+        byPage.set(match.pageNum, list);
+      }
+      const isActive = i === activeSearchIndex;
+      for (const rect of rects) {
+        list.push({ rect, isActive });
+      }
+    }
+    return byPage;
+  }, [searchOpen, pdfUrl, searchMatches, activeSearchIndex, pageTextItems, zoomScale, rotation]);
+
+  useEffect(() => {
+    if (!searchOpen || !shouldScrollSearchRef.current) return;
+    shouldScrollSearchRef.current = false;
+    const activeMatch = searchMatches[activeSearchIndex];
+    if (!activeMatch) return;
+    if (activeHighlightRef.current && typeof activeHighlightRef.current.scrollIntoView === "function") {
+      activeHighlightRef.current.scrollIntoView({ block: "center", behavior: "smooth" });
+      return;
+    }
+    const pageEl = pageRefs.current.get(activeMatch.pageNum);
+    if (pageEl && typeof pageEl.scrollIntoView === "function") {
+      pageEl.scrollIntoView({ block: "center", behavior: "smooth" });
+    }
+  }, [searchOpen, searchMatches, activeSearchIndex, searchHighlightsByPage]);
+
+  const openSearch = () => {
+    if (!pdfUrl) return;
+    setSearchOpen(true);
+    setSearchFocusNonce((n) => n + 1);
+  };
+
+  const closeSearch = () => {
+    setSearchOpen(false);
+    paneRef.current?.focus();
+  };
+
+  const stepSearchMatch = (delta: number) => {
+    if (searchMatches.length === 0) return;
+    shouldScrollSearchRef.current = true;
+    setSearchMatchIndex((idx) => {
+      const len = searchMatches.length;
+      return (((idx + delta) % len) + len) % len;
+    });
+  };
+
+  const handlePaneKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === "f") {
+      e.preventDefault();
+      e.stopPropagation();
+      openSearch();
+    }
+  };
+
   const statisticsSummary = formatPdfStatisticsSummary(
     pageCount,
     statsState === "ready" ? textStats : null
@@ -498,7 +599,13 @@ export function PdfPreview({
   };
 
   return (
-    <div className="lemma-pdf-preview-pane" data-stale={isStale ? "true" : undefined} ref={paneRef}>
+    <div
+      className="lemma-pdf-preview-pane"
+      data-stale={isStale ? "true" : undefined}
+      ref={paneRef}
+      tabIndex={-1}
+      onKeyDown={handlePaneKeyDown}
+    >
       <div className="lemma-pdf-toolbar">
         <div className="lemma-pdf-toolbar-cluster">
           <button
@@ -569,8 +676,42 @@ export function PdfPreview({
           >
             Rotate
           </button>
+          <button
+            type="button"
+            aria-label="Find in PDF"
+            title="Find in PDF (Cmd/Ctrl+F)"
+            disabled={!pdfUrl}
+            onClick={openSearch}
+          >
+            Find
+          </button>
         </div>
       </div>
+
+      {searchOpen && pdfUrl && (
+        <PaneFindBar
+          paneLabel="PDF"
+          query={searchQuery}
+          onQueryChange={(q) => {
+            shouldScrollSearchRef.current = true;
+            setSearchQuery(q);
+            setSearchMatchIndex(0);
+          }}
+          caseSensitive={searchCaseSensitive}
+          onToggleCaseSensitive={() => {
+            shouldScrollSearchRef.current = true;
+            setSearchCaseSensitive((c) => !c);
+            setSearchMatchIndex(0);
+          }}
+          matchCount={searchMatches.length}
+          activeIndex={activeSearchIndex}
+          onNext={() => stepSearchMatch(1)}
+          onPrev={() => stepSearchMatch(-1)}
+          onClose={closeSearch}
+          focusNonce={searchFocusNonce}
+          placeholder="Find in PDF..."
+        />
+      )}
 
       {dropdownOpen && (
         <div
@@ -689,6 +830,20 @@ export function PdfPreview({
               onDoubleClick={(e) => handlePageInverseSync(pageNum, e)}
             >
               <canvas className="lemma-pdf-canvas" data-page-number={pageNum} />
+              {(searchHighlightsByPage.get(pageNum) ?? []).map((hl, idx) => (
+                <div
+                  key={`search-${pageNum}-${idx}`}
+                  ref={hl.isActive ? activeHighlightRef : undefined}
+                  className={`lemma-pdf-search-highlight${hl.isActive ? " is-active" : ""}`}
+                  data-testid={hl.isActive ? "pdf-search-highlight-active" : "pdf-search-highlight"}
+                  style={{
+                    left: `${hl.rect.left}px`,
+                    top: `${hl.rect.top}px`,
+                    width: `${hl.rect.width}px`,
+                    height: `${hl.rect.height}px`,
+                  }}
+                />
+              ))}
               {forwardHighlight &&
                 forwardHighlight.page === pageNum &&
                 forwardHighlight.nonce !== dismissedNonce &&

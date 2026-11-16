@@ -24,6 +24,13 @@ import { usePaneLayout, maxWidthFor, MIN_WIDTHS } from "./hooks/usePaneLayout";
 import { useAgentRun, chatScopeKey } from "./hooks/useAgentRun";
 import { useBibEntries } from "./hooks/useBibEntries";
 
+const BINARY_FILE_EXT_RE =
+  /\.(png|jpe?g|gif|webp|bmp|ico|tiff?|pdf|eps|zip|gz|tar|woff2?|ttf|otf|exe|dll|so|dylib|bin|pyc)$/i;
+
+function isBinaryFilePath(filePath: string, serverFlag?: boolean): boolean {
+  return Boolean(serverFlag) || BINARY_FILE_EXT_RE.test(filePath);
+}
+
 export interface AuthStatusResponse {
   authenticated: boolean;
   csrf_token: string | null;
@@ -49,6 +56,7 @@ export function App(): React.ReactElement {
   const [activeFile, setActiveFile] = useState<string>("main.tex");
   const [fileContent, setFileContent] = useState<string>("");
   const [fileEtag, setFileEtag] = useState<string | null>(null);
+  const [fileIsBinary, setFileIsBinary] = useState<boolean>(false);
   // Which file fileContent/fileEtag belong to (null until the first load), so the editor ignores stale content.
   const [fileContentPath, setFileContentPath] = useState<string | null>(null);
   // Bumped after a restore reload so the editor drops any unsaved text even when the content is unchanged.
@@ -276,9 +284,11 @@ export function App(): React.ReactElement {
         if (!res.ok) throw new Error("File fetch failed");
         return res.json();
       })
-      .then((data: { content: string; etag: string }) => {
+      .then((data: { content: string; etag: string; is_binary?: boolean }) => {
         if (!active) return;
-        setFileContent(data.content);
+        const binary = isBinaryFilePath(activeFile, data.is_binary);
+        setFileIsBinary(binary);
+        setFileContent(binary ? "" : data.content);
         setFileEtag(data.etag);
         setFileContentPath(activeFile);
         setGithubReloadBlocked(false);
@@ -589,10 +599,12 @@ export function App(): React.ReactElement {
       if (!fileStillExists) setActiveFile(targetFile);
       const fileRes = await fetch(`/api/projects/${pulledProjectId}/files/${targetFile}`, { signal: timeout });
       if (!fileRes.ok) throw new Error("File not found");
-      const fileData = (await fileRes.json()) as { content?: string; etag?: string };
+      const fileData = (await fileRes.json()) as { content?: string; etag?: string; is_binary?: boolean };
       if (!stillHere()) return;
+      const binary = isBinaryFilePath(targetFile, fileData.is_binary);
       setDirtyBuffers({});
-      setFileContent(fileData.content !== undefined ? fileData.content : "");
+      setFileIsBinary(binary);
+      setFileContent(binary ? "" : fileData.content !== undefined ? fileData.content : "");
       setFileEtag(fileData.etag !== undefined ? fileData.etag : null);
       setFileContentPath(targetFile);
       setEditorReloadKey((key) => key + 1);
@@ -1028,13 +1040,16 @@ export function App(): React.ReactElement {
                     if (!res.ok) throw new Error("File not found");
                     return res.json();
                   })
-                  .then((fData: { content?: string; etag?: string }) => {
-                    setFileContent(fData.content !== undefined ? fData.content : "");
+                  .then((fData: { content?: string; etag?: string; is_binary?: boolean }) => {
+                    const binary = isBinaryFilePath(targetFile, fData.is_binary);
+                    setFileIsBinary(binary);
+                    setFileContent(binary ? "" : fData.content !== undefined ? fData.content : "");
                     setFileEtag(fData.etag !== undefined ? fData.etag : null);
                     setFileContentPath(targetFile);
                     setEditorReloadKey((k) => k + 1);
                   })
                   .catch(() => {
+                    setFileIsBinary(BINARY_FILE_EXT_RE.test(targetFile));
                     setFileContent("");
                     setFileEtag(null);
                     setFileContentPath(targetFile);
@@ -1368,6 +1383,21 @@ export function App(): React.ReactElement {
                 {placeView ? (
                   placeView
                 ) : activeProject ? (
+                  (fileIsBinary && fileContentPath === activeFile) || BINARY_FILE_EXT_RE.test(activeFile) ? (
+                    <div className="lemma-latex-editor" data-testid="binary-file-placeholder">
+                      <div className="lemma-editor-toolbar">
+                        <span className="lemma-active-filename">{activeFile}</span>
+                      </div>
+                      <div className="lemma-binary-file-preview">
+                        <div className="lemma-binary-file-card">
+                          <h3>No preview available for this file</h3>
+                          <p>
+                            <code>{activeFile}</code> is a binary file and cannot be opened in the text editor.
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
                   <>
                     <LatexEditor
                       projectId={activeProject.project_id}
@@ -1421,6 +1451,7 @@ export function App(): React.ReactElement {
                       zoteroSyncStatus={zoteroPullStatus}
                     />
                   </>
+                  )
                 ) : (
                   <div className="lemma-empty-workspace-prompt">
                     <div className="lemma-empty-workspace-card">
