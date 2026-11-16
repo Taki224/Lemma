@@ -440,3 +440,24 @@ def test_router_index_mode_includes_root_preamble_for_non_root_active_file() -> 
     assert context.mode == "index"
     assert "\\newcommand{\\RootMacro}{42}" in joined
     assert "Read-only root preamble (main.tex)" in joined
+
+
+def test_global_sweep_prompts_route_to_file_mode_under_global_limit() -> None:
+    lines = ["\\documentclass{imc-rai}", "\\begin{document}"]
+    lines.extend([f"Line {i}" for i in range(3, 301)])
+    lines.append("\\end{document}")
+    text = "\n".join(lines) + "\n"
+
+    ctx = build_manuscript_context(
+        active_path="thesis.tex",
+        root_path="thesis.tex",
+        active_text=text,
+        root_text=text,
+        user_prompt="for every referenced file in thesis.tex except references.bib add assets/",
+        profile_id="writing",
+        role="writing",
+        index_text="Files: thesis.tex, assets/imc-rai.cls",
+    )
+    assert ctx.mode == "file"
+    assert ctx.window_start == 1
+    assert "\\documentclass{imc-rai}" in ctx.window_text

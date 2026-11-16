@@ -8,6 +8,7 @@ import secrets as pysecrets
 from contextlib import closing
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
+from difflib import SequenceMatcher
 from pathlib import Path
 from typing import Any, Awaitable, Callable
 
@@ -76,17 +77,25 @@ _EXCERPT_CLOSE_RE = re.compile(
 )
 
 _SEARCH_REPLACE_RE = re.compile(
-    r"<<<<<<<[ \t]*SEARCH[ \t]*\n(.*?)\n=======[ \t]*\n(.*?)\n>>>>>>>[ \t]*REPLACE",
-    re.DOTALL,
+    r"^[ \t]*<{3,}[ \t]*SEARCH\b[^\n]*\r?\n(.*?)\r?\n[ \t]*={3,}[ \t]*\r?\n(?:(.*?)\r?\n)?[ \t]*>{3,}[ \t]*REPLACE\b[^\n]*",
+    re.DOTALL | re.IGNORECASE | re.MULTILINE,
 )
 _INCOMPLETE_SEARCH_BLOCK_RE = re.compile(
-    r"(?:^|\n)(?:```[\w+-]*[ \t]*\n)?[ \t]*<<<<<<<[ \t]*SEARCH\b.*",
+    r"(?:^|\n)(?:```[\w+-]*[ \t]*\n)?[ \t]*<{3,}[ \t]*SEARCH\b.*",
     re.DOTALL | re.IGNORECASE,
 )
 _STRAY_REPLACE_MARKER_RE = re.compile(
-    r"^[ \t]*>>>>>>>[ \t]*REPLACE[ \t]*$",
+    r"^[ \t]*>{3,}[ \t]*REPLACE\b[^\n]*$",
     re.MULTILINE | re.IGNORECASE,
 )
+_ELLIPSIS_LINE_RE = re.compile(r"^(?:%\s*)?(?:\.{3,}|…)\s*$")
+_BEGIN_ENV_RE = re.compile(r"^\\begin\{([A-Za-z0-9_*]+)\}")
+_END_ENV_RE = re.compile(r"^\\end\{([A-Za-z0-9_*]+)\}")
+_UNIFIED_DIFF_FENCE_RE = re.compile(
+    r"```(?:diff|patch)?[ \t]*\n((?:---[^\n]*\n\+\+\+[^\n]*\n)?@@[^\n]*\n.*?)```",
+    re.DOTALL | re.IGNORECASE,
+)
+_UNIFIED_HUNK_HDR_RE = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@")
 CHAT_FINAL_MAX_TOKENS = 16384
 
 
@@ -298,6 +307,164 @@ def _locate_line_span(
     return _pick_best_span(matches, prefer_line)
 
 
+_FUZZY_MIN_RATIO = 0.82
+_FUZZY_AMBIGUITY_MARGIN = 0.04
+
+
+def _normalize_ws(line: str) -> str:
+    """Collapse internal whitespace runs and strip edges."""
+    return " ".join(line.split())
+
+
+def _nonempty_norm_lines(lines: list[str]) -> list[tuple[int, str]]:
+    """Return (1-based line_no, normalized_text) for every non-blank line."""
+    return [
+        (idx + 1, norm)
+        for idx, line in enumerate(lines)
+        if (norm := _normalize_ws(line))
+    ]
+
+
+def _locate_normalized_span(
+    file_lines: list[str],
+    nonempty_file: list[tuple[int, str]],
+    snippet_lines: list[str],
+    wanted_norm: list[str],
+    windows: list[tuple[int, int]],
+    prefer_line: int | None,
+) -> tuple[int, int] | None:
+    """Match non-empty normalized lines, ignoring internal blank lines and whitespace."""
+    if not wanted_norm or len(nonempty_file) < len(wanted_norm):
+        return None
+    require_leading_blank = not snippet_lines[0].strip()
+    require_trailing_blank = not snippet_lines[-1].strip()
+    count = len(wanted_norm)
+    matches: list[tuple[int, int, int]] = []
+    for idx in range(len(nonempty_file) - count + 1):
+        if [entry[1] for entry in nonempty_file[idx : idx + count]] != wanted_norm:
+            continue
+        span_start = nonempty_file[idx][0]
+        span_end = nonempty_file[idx + count - 1][0]
+        if require_leading_blank:
+            if span_start <= 1 or file_lines[span_start - 2].strip():
+                continue
+            span_start -= 1
+        if require_trailing_blank:
+            if span_end >= len(file_lines) or file_lines[span_end].strip():
+                continue
+            span_end += 1
+        for window_idx, (w_s, w_e) in enumerate(windows):
+            if w_s <= span_start and span_end <= w_e:
+                matches.append((span_start, span_end, window_idx))
+                break
+    if not matches:
+        return None
+    return _pick_best_span(matches, prefer_line)
+
+
+def _locate_ellipsis_span(
+    nonempty_file: list[tuple[int, str]],
+    snippet_lines: list[str],
+    windows: list[tuple[int, int]],
+    prefer_line: int | None,
+) -> tuple[int, int] | None:
+    """Anchor a SEARCH snippet containing a single '...' / '% ...' ellipsis line."""
+    ellipsis_indices = [
+        i for i, line in enumerate(snippet_lines) if _ELLIPSIS_LINE_RE.match(line.strip())
+    ]
+    if len(ellipsis_indices) != 1:
+        return None
+    split_at = ellipsis_indices[0]
+    prefix = [_normalize_ws(l) for l in snippet_lines[:split_at] if l.strip()]
+    suffix = [_normalize_ws(l) for l in snippet_lines[split_at + 1 :] if l.strip()]
+    if not prefix or not suffix:
+        return None
+
+    max_gap = max(80, len(snippet_lines) * 8)
+    p_len, s_len = len(prefix), len(suffix)
+    candidates: list[tuple[int, int, int]] = []
+    for p_idx in range(len(nonempty_file) - p_len - s_len + 1):
+        if [e[1] for e in nonempty_file[p_idx : p_idx + p_len]] != prefix:
+            continue
+        span_start = nonempty_file[p_idx][0]
+        for s_idx in range(p_idx + p_len, len(nonempty_file) - s_len + 1):
+            span_end = nonempty_file[s_idx + s_len - 1][0]
+            if span_end - span_start > max_gap:
+                break
+            if [e[1] for e in nonempty_file[s_idx : s_idx + s_len]] != suffix:
+                continue
+            for window_idx, (w_s, w_e) in enumerate(windows):
+                if w_s <= span_start and span_end <= w_e:
+                    candidates.append((span_start, span_end, window_idx))
+                    break
+            break
+    if not candidates:
+        return None
+    return _pick_best_span(candidates, prefer_line)
+
+
+def _locate_fuzzy_span(
+    nonempty_file: list[tuple[int, str]],
+    wanted_norm: list[str],
+    windows: list[tuple[int, int]],
+    prefer_line: int | None,
+) -> tuple[int, int] | None:
+    """Fuzzy line-sequence match for slightly paraphrased or mis-wrapped SEARCH blocks."""
+    m = len(wanted_norm)
+    if m == 0 or (m == 1 and len(wanted_norm[0]) < 20):
+        return None
+    wanted_joined = "\n".join(wanted_norm)
+    wanted_tokens = set(wanted_joined.split())
+
+    scored: list[tuple[float, int, int, int]] = []
+    min_k = max(1, m - 2)
+    max_k = m + 2
+    for window_idx, (w_s, w_e) in enumerate(windows):
+        win_entries = [e for e in nonempty_file if w_s <= e[0] <= w_e]
+        n_win = len(win_entries)
+        for k in range(min_k, max_k + 1):
+            if n_win < k:
+                continue
+            for i in range(n_win - k + 1):
+                cand_lines = [e[1] for e in win_entries[i : i + k]]
+                cand_joined = "\n".join(cand_lines)
+                # Fast token-overlap prefilter before running SequenceMatcher.
+                cand_tokens = set(cand_joined.split())
+                if not wanted_tokens or not cand_tokens:
+                    continue
+                overlap = len(wanted_tokens & cand_tokens) / max(
+                    len(wanted_tokens), len(cand_tokens)
+                )
+                if overlap < 0.45:
+                    continue
+                sm = SequenceMatcher(None, wanted_joined, cand_joined)
+                if sm.quick_ratio() < _FUZZY_MIN_RATIO:
+                    continue
+                ratio = sm.ratio()
+                if ratio >= _FUZZY_MIN_RATIO:
+                    scored.append(
+                        (ratio, win_entries[i][0], win_entries[i + k - 1][0], window_idx)
+                    )
+
+    if not scored:
+        return None
+    best_ratio = max(item[0] for item in scored)
+    near_best = [
+        (s_ln, e_ln, w_idx)
+        for ratio, s_ln, e_ln, w_idx in scored
+        if best_ratio - ratio <= _FUZZY_AMBIGUITY_MARGIN
+    ]
+    # Deduplicate overlapping spans from varying window sizes k.
+    if len(near_best) > 1:
+        # Keep only if prefer_line can disambiguate or all candidates overlap the same region.
+        distinct_regions = {
+            (s_ln // 5, e_ln // 5) for s_ln, e_ln, _ in near_best
+        }
+        if len(distinct_regions) > 1 and prefer_line is None:
+            return None
+    return _pick_best_span(near_best, prefer_line)
+
+
 def _locate_search_span(
     file_text: str,
     snippet: str,
@@ -306,16 +473,17 @@ def _locate_search_span(
     search_windows: list[tuple[int, int]] | None = None,
     prefer_line: int | None = None,
 ) -> tuple[int, int, str] | None:
-    """Locate a SEARCH snippet: exact lines first, else the same lines ignoring indentation.
+    """Locate a SEARCH snippet with staged fallbacks: exact, stripped, normalized, ellipsis, fuzzy.
 
-    Blank lines stay part of the match. Returns file text for the span so an indented
-    passage is anchored on the buffer, not on the model's stripped copy.
+    Returns 1-based (start_line, end_line, file_slice) anchored on the actual file text.
     """
     if not snippet.strip():
         return None
 
+    file_lines = file_text.splitlines()
+
     def file_slice(start_line: int, end_line: int) -> str:
-        return "\n".join(file_text.splitlines()[start_line - 1 : end_line])
+        return "\n".join(file_lines[start_line - 1 : end_line])
 
     span = _locate_line_span(
         file_text,
@@ -327,8 +495,8 @@ def _locate_search_span(
     if span is not None:
         return span[0], span[1], file_slice(*span)
 
-    wanted = [line.strip() for line in snippet.split("\n")]
-    file_lines = file_text.splitlines()
+    snippet_lines = snippet.split("\n")
+    wanted = [line.strip() for line in snippet_lines]
     windows = _resolve_search_windows(
         len(file_lines), window=window, search_windows=search_windows
     )
@@ -341,10 +509,127 @@ def _locate_search_span(
             candidate = file_lines[start - 1 : start - 1 + count]
             if [line.strip() for line in candidate] == wanted:
                 matches.append((start, start + count - 1, window_idx))
-    if not matches:
+    if matches:
+        chosen = _pick_best_span(matches, prefer_line)
+        return chosen[0], chosen[1], file_slice(*chosen)
+
+    nonempty_file = _nonempty_norm_lines(file_lines)
+    wanted_norm = [_normalize_ws(l) for l in snippet_lines if l.strip()]
+
+    norm_span = _locate_normalized_span(
+        file_lines, nonempty_file, snippet_lines, wanted_norm, windows, prefer_line
+    )
+    if norm_span is not None:
+        return norm_span[0], norm_span[1], file_slice(*norm_span)
+
+    ellipsis_span = _locate_ellipsis_span(nonempty_file, snippet_lines, windows, prefer_line)
+    if ellipsis_span is not None:
+        return ellipsis_span[0], ellipsis_span[1], file_slice(*ellipsis_span)
+
+    fuzzy_span = _locate_fuzzy_span(nonempty_file, wanted_norm, windows, prefer_line)
+    if fuzzy_span is not None:
+        return fuzzy_span[0], fuzzy_span[1], file_slice(*fuzzy_span)
+
+    return None
+
+
+def _locate_code_fence_anchor(
+    file_text: str,
+    repl: str,
+    *,
+    window: tuple[int, int] | None = None,
+    search_windows: list[tuple[int, int]] | None = None,
+    prefer_line: int | None = None,
+) -> tuple[int, int, str] | None:
+    """Try to anchor a fenced LaTeX block to a matching environment or boundary in file_text."""
+    repl_lines = [l.strip() for l in repl.splitlines() if l.strip()]
+    if len(repl_lines) < 2:
         return None
-    chosen = _pick_best_span(matches, prefer_line)
-    return chosen[0], chosen[1], file_slice(*chosen)
+    file_lines = file_text.splitlines()
+    windows = _resolve_search_windows(
+        len(file_lines), window=window, search_windows=search_windows
+    )
+    if not windows:
+        return None
+
+    first_norm = _normalize_ws(repl_lines[0])
+    last_norm = _normalize_ws(repl_lines[-1])
+    begin_m = _BEGIN_ENV_RE.match(first_norm)
+    end_m = _END_ENV_RE.match(last_norm)
+
+    candidates: list[tuple[int, int, int]] = []
+    if begin_m and end_m and begin_m.group(1) == end_m.group(1):
+        env = begin_m.group(1)
+        begin_tok = f"\\begin{{{env}}}"
+        end_tok = f"\\end{{{env}}}"
+        for window_idx, (w_s, w_e) in enumerate(windows):
+            depth = 0
+            start_ln: int | None = None
+            for ln in range(w_s, w_e + 1):
+                stripped = file_lines[ln - 1].strip()
+                if begin_tok in stripped:
+                    if depth == 0:
+                        start_ln = ln
+                    depth += stripped.count(begin_tok)
+                if end_tok in stripped and depth > 0:
+                    depth -= stripped.count(end_tok)
+                    if depth <= 0 and start_ln is not None:
+                        candidates.append((start_ln, ln, window_idx))
+                        depth = 0
+                        start_ln = None
+        if len(candidates) == 1:
+            chosen = candidates[0][:2]
+            return chosen[0], chosen[1], "\n".join(file_lines[chosen[0] - 1 : chosen[1]])
+        if len(candidates) > 1:
+            # Pick the environment whose body best matches repl.
+            repl_joined = "\n".join(repl_lines)
+            scored = []
+            for s_ln, e_ln, w_idx in candidates:
+                body = "\n".join(l.strip() for l in file_lines[s_ln - 1 : e_ln] if l.strip())
+                ratio = SequenceMatcher(None, repl_joined, body).ratio()
+                scored.append((ratio, s_ln, e_ln, w_idx))
+            best_ratio = max(x[0] for x in scored)
+            if best_ratio >= 0.45:
+                top = [(s, e, w) for r, s, e, w in scored if best_ratio - r <= 0.05]
+                chosen = _pick_best_span(top, prefer_line)
+                return chosen[0], chosen[1], "\n".join(file_lines[chosen[0] - 1 : chosen[1]])
+
+    return None
+
+
+def _parse_unified_diff_hunks(diff_body: str) -> list[tuple[str, str]]:
+    """Parse a unified diff into (original_text, replacement_text) pairs."""
+    pairs: list[tuple[str, str]] = []
+    orig_lines: list[str] = []
+    repl_lines: list[str] = []
+    in_hunk = False
+
+    def flush() -> None:
+        nonlocal orig_lines, repl_lines
+        if in_hunk and orig_lines:
+            pairs.append(("\n".join(orig_lines), "\n".join(repl_lines)))
+        orig_lines = []
+        repl_lines = []
+
+    for line in diff_body.splitlines():
+        if _UNIFIED_HUNK_HDR_RE.match(line):
+            flush()
+            in_hunk = True
+            continue
+        if not in_hunk:
+            continue
+        if line.startswith("\\ No newline"):
+            continue
+        if line.startswith("-"):
+            orig_lines.append(line[1:])
+        elif line.startswith("+"):
+            repl_lines.append(line[1:])
+        elif line.startswith(" ") or line == "":
+            content = line[1:] if line.startswith(" ") else ""
+            orig_lines.append(content)
+            repl_lines.append(content)
+    flush()
+    return pairs
 
 
 def _extract_preamble(text: str) -> str | None:
@@ -891,27 +1176,24 @@ class ChatService:
             else:
                 default_original = "\n".join(lines[s_line - 1 : e_line])
 
-        # 1. Check for SEARCH/REPLACE blocks
-        sr_matches = list(_SEARCH_REPLACE_RE.finditer(response_text))
-        if sr_matches:
-            hunks: list[ProposedHunk] = []
-            skipped = 0
-            for m in sr_matches:
-                orig = m.group(1)
-                repl = m.group(2)
+        prefer_line: int | None = None
+        if isinstance(selection, dict) and selection.get("start_line"):
+            try:
+                prefer_line = int(selection["start_line"])
+            except (TypeError, ValueError):
+                prefer_line = None
+
+        def _anchor_pairs(pairs: list[tuple[str, str]]) -> tuple[list[ProposedHunk], int]:
+            anchored: list[ProposedHunk] = []
+            unanchored = 0
+            for orig, repl in pairs:
                 if orig.endswith("\r"):
                     orig = orig[:-1]
                 if repl.endswith("\r"):
                     repl = repl[:-1]
                 if not orig.strip("\r\n"):
-                    skipped += 1
+                    unanchored += 1
                     continue
-                prefer_line = None
-                if isinstance(selection, dict) and selection.get("start_line"):
-                    try:
-                        prefer_line = int(selection["start_line"])
-                    except (TypeError, ValueError):
-                        prefer_line = None
                 located = _locate_search_span(
                     file_text,
                     orig,
@@ -920,10 +1202,10 @@ class ChatService:
                     prefer_line=prefer_line,
                 )
                 if located is None:
-                    skipped += 1
+                    unanchored += 1
                     continue
                 s_ln, e_ln, located_text = located
-                hunks.append(
+                anchored.append(
                     self._build_verified_hunk(
                         project_id=project_id,
                         file_path=file_path,
@@ -936,7 +1218,12 @@ class ChatService:
                         staged_keys=staged_keys,
                     )
                 )
-            return hunks, skipped
+            return anchored, unanchored
+
+        # 1. Check for SEARCH/REPLACE blocks
+        sr_matches = list(_SEARCH_REPLACE_RE.finditer(response_text))
+        if sr_matches:
+            return _anchor_pairs([(m.group(1), m.group(2) or "") for m in sr_matches])
 
         allowed_windows = _resolve_search_windows(
             total_lines, window=search_window, search_windows=search_windows
@@ -992,6 +1279,15 @@ class ChatService:
             except (json.JSONDecodeError, TypeError, ValueError):
                 pass
 
+        # 2b. Check for fenced unified diff blocks
+        diff_matches = list(_UNIFIED_DIFF_FENCE_RE.finditer(response_text))
+        if diff_matches:
+            diff_pairs: list[tuple[str, str]] = []
+            for m in diff_matches:
+                diff_pairs.extend(_parse_unified_diff_hunks(m.group(1)))
+            if diff_pairs:
+                return _anchor_pairs(diff_pairs)
+
         # 3. Check for fenced ```latex / ```tex code blocks
         code_matches = list(_CODE_FENCE_RE.finditer(response_text))
         if code_matches:
@@ -1022,7 +1318,29 @@ class ChatService:
                     span = _locate_line_span(file_text, repl)
                     if span:
                         continue  # Already in file verbatim
-                    # If repl matches a single section/environment in file, re-anchor to that section
+                    env_anchor = _locate_code_fence_anchor(
+                        file_text,
+                        repl,
+                        window=search_window,
+                        search_windows=search_windows,
+                        prefer_line=prefer_line,
+                    )
+                    if env_anchor is not None:
+                        s_ln, e_ln, located_text = env_anchor
+                        hunks.append(
+                            self._build_verified_hunk(
+                                project_id=project_id,
+                                file_path=file_path,
+                                base_etag=base_etag,
+                                start_line=s_ln,
+                                end_line=e_ln,
+                                original_text=located_text,
+                                replacement_text=repl,
+                                bib_entries=bib_entries,
+                                staged_keys=staged_keys,
+                            )
+                        )
+                        continue
                     # Otherwise default to full file only if file is small or replacement contains documentclass
                     if ("\\documentclass" in repl or total_lines <= 25) and _span_in_allowed_windows(
                         1, total_lines
