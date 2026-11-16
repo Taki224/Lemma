@@ -90,9 +90,16 @@ _GLOBAL_INTENT_RE = re.compile(
     r"proofread(?:ing)?"
     r"|summari[sz]e"
     r"|summary"
-    r"|entire\s+(?:file|document|manuscript|paper|chapter)"
-    r"|whole\s+(?:file|document|manuscript|paper|chapter)"
+    r"|entire\s+(?:file|document|manuscript|paper|thesis|chapter)"
+    r"|whole\s+(?:file|document|manuscript|paper|thesis|chapter)"
     r"|review\s+the\s+whole"
+    r"|for\s+every\b"
+    r"|every\s+(?:referenced|linked|included|cited|file|path|link|image|figure|occurrence|instance)\b"
+    r"|everywhere"
+    r"|throughout\s+the\s+(?:file|document|manuscript|paper|thesis|chapter)"
+    r"|across\s+the\s+(?:file|document|manuscript|paper|thesis|chapter)"
+    r"|(?:update|replace|change|fix|check|find|rename|move)\s+all\b"
+    r"|all\s+(?:occurrences|instances|paths|links|references|files|images|figures|citations)\b"
     r")\b",
     re.IGNORECASE,
 )

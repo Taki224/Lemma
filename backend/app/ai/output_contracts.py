@@ -52,7 +52,9 @@ AGENT_STEP_CONTRACT: str = (
     "(at most 160 characters) describing what you are about to check or actually found.\n"
     '- Include `"action"`: `"search"`, `"read"`, or `"answer"`.\n'
     '- When `"action"` is `"search"`, include `"query"` (required search string) and optional '
-    '`"path"` (file path filter to narrow the search).\n'
+    '`"path"` (file path filter to narrow the search). Prefer `"search"` over guessing line '
+    "numbers when locating commands, paths, or occurrences; remember line 1 / preamble for "
+    "`\\documentclass` and `\\usepackage`.\n"
     '- When `"action"` is `"read"`, include `"path"` (exact path from the available project or '
     'attached files), plus optional `"focus"` (keywords), optional `"start_line"` / `"end_line"` '
     '(1-based integers for seeking within text files), and optional `"pages"` (1-based page list '

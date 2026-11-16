@@ -2558,3 +2558,156 @@ async def test_propose_compile_fix_drops_truncated_length_response(
     finally:
         await custom_http.aclose()
         await http_client.aclose()
+
+
+def test_locate_search_span_tolerates_internal_blank_lines_and_whitespace() -> None:
+    file_text = (
+        "\\begin{figure}\n"
+        "  \\centering\n"
+        "\n"
+        "  \\caption{Including sub images! }\n"
+        "\\end{figure}\n"
+    )
+    snippet = "\\begin{figure}\n\\centering\n\\caption{Including sub images!}\n\\end{figure}"
+    located = _locate_search_span(file_text, snippet)
+    assert located is not None
+    assert located[0] == 1
+    assert located[1] == 5
+    assert "\\caption{Including sub images! }" in located[2]
+
+
+def test_locate_search_span_supports_ellipsis_and_fuzzy_match() -> None:
+    file_text = (
+        "\\begin{subfigure}{.5\\textwidth}\n"
+        "  \\centering\n"
+        "  % include second image\n"
+        "  \\includegraphics[width=.8\\linewidth]{assets/imc_logo_print.jpg}\n"
+        "  \\caption{New Logo since 2023}\n"
+        "  \\label{fig:sub-second}\n"
+        "\\end{subfigure}\n"
+    )
+    ellipsis_snippet = "\\begin{subfigure}{.5\\textwidth}\n% ...\n\\end{subfigure}"
+    located_ellipsis = _locate_search_span(file_text, ellipsis_snippet)
+    assert located_ellipsis is not None
+    assert (located_ellipsis[0], located_ellipsis[1]) == (1, 7)
+
+    # Model omitted the comment line and wrapped \includegraphics differently.
+    fuzzy_snippet = (
+        "\\begin{subfigure}{.5\\textwidth}\n"
+        "  \\centering\n"
+        "  \\includegraphics[width=.8\\linewidth]\n"
+        "  {assets/imc_logo_print.jpg}\n"
+        "  \\caption{New Logo since 2023}\n"
+        "  \\label{fig:sub-second}\n"
+        "\\end{subfigure}"
+    )
+    located_fuzzy = _locate_search_span(file_text, fuzzy_snippet)
+    assert located_fuzzy is not None
+    assert (located_fuzzy[0], located_fuzzy[1]) == (1, 7)
+
+
+@pytest.mark.asyncio
+async def test_extract_hunks_accepts_relaxed_markers_and_empty_replace(tmp_path: Path) -> None:
+    reply = (
+        "<<< search thesis.tex\n"
+        "alpha\n"
+        "===\n"
+        "ALPHA\n"
+        ">>> replace\n\n"
+        "<<< SEARCH\n"
+        "remove me\n"
+        "===\n"
+        ">>> REPLACE\n"
+    )
+    _, _, project_service, chat_service, http_client = _setup_services(tmp_path, reply)
+    try:
+        meta = project_service.create_project("RelaxedMarkers")
+        project_service.write_file(
+            project_id=meta.project_id,
+            rel_path="thesis.tex",
+            content="alpha\nremove me\nomega\n",
+            expected_etag=None,
+        )
+        chat = chat_service.create_chat(meta.project_id, title="Relaxed")
+        turn = await chat_service.send_message(
+            project_id=meta.project_id,
+            chat_id=chat.chat_id,
+            user_prompt="Fix it",
+            model="anthropic/claude-3.7-sonnet",
+            profile_id="writing",
+            active_file="thesis.tex",
+        )
+        assert len(turn.hunks) == 2
+        assert turn.hunks[0].replacement_text == "ALPHA"
+        assert turn.hunks[1].original_text == "remove me"
+        assert turn.hunks[1].replacement_text == ""
+        assert "could not be located" not in turn.reply
+    finally:
+        await http_client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_extract_hunks_parses_unified_diff_and_environment_fence_fallbacks(
+    tmp_path: Path,
+) -> None:
+    _, _, project_service, chat_service, http_client = _setup_services(tmp_path, "")
+    try:
+        body = "\n".join(f"% filler line {i}" for i in range(30))
+        file_text = (
+            f"{body}\n"
+            "\\begin{figure}\n"
+            "  \\centering\n"
+            "  \\caption{Old}\n"
+            "\\end{figure}\n"
+        )
+        diff_reply = (
+            "```diff\n"
+            "--- a/thesis.tex\n"
+            "+++ b/thesis.tex\n"
+            "@@ -31,4 +31,4 @@\n"
+            " \\begin{figure}\n"
+            "   \\centering\n"
+            "-  \\caption{Old}\n"
+            "+  \\caption{New}\n"
+            " \\end{figure}\n"
+            "```\n"
+        )
+        diff_hunks, diff_skipped = chat_service._extract_hunks_from_response(
+            project_id="p1",
+            response_text=diff_reply,
+            file_path="thesis.tex",
+            file_text=file_text,
+            base_etag="e1",
+            selection=None,
+            bib_entries={},
+            staged_keys=set(),
+        )
+        assert diff_skipped == 0
+        assert len(diff_hunks) == 1
+        assert (diff_hunks[0].start_line, diff_hunks[0].end_line) == (31, 34)
+        assert "\\caption{New}" in diff_hunks[0].replacement_text
+
+        fence_reply = (
+            "```latex\n"
+            "\\begin{figure}\n"
+            "  \\centering\n"
+            "  \\caption{Updated}\n"
+            "\\end{figure}\n"
+            "```\n"
+        )
+        fence_hunks, fence_skipped = chat_service._extract_hunks_from_response(
+            project_id="p1",
+            response_text=fence_reply,
+            file_path="thesis.tex",
+            file_text=file_text,
+            base_etag="e1",
+            selection=None,
+            bib_entries={},
+            staged_keys=set(),
+        )
+        assert fence_skipped == 0
+        assert len(fence_hunks) == 1
+        assert (fence_hunks[0].start_line, fence_hunks[0].end_line) == (31, 34)
+        assert "\\caption{Updated}" in fence_hunks[0].replacement_text
+    finally:
+        await http_client.aclose()

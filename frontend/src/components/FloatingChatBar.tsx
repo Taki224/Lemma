@@ -44,14 +44,14 @@ type ReplyPart =
 
 // Same block shape the backend parses into hunks (chat_service._SEARCH_REPLACE_RE).
 const EDIT_BLOCK_SRC =
-  "<<<<<<<[ \\t]*SEARCH[ \\t]*\\n([\\s\\S]*?)\\n=======[ \\t]*\\n([\\s\\S]*?)\\n>>>>>>>[ \\t]*REPLACE";
+  "^[ \\t]*<{3,}[ \\t]*SEARCH\\b[^\\n]*\\r?\\n([\\s\\S]*?)\\r?\\n[ \\t]*={3,}[ \\t]*\\r?\\n(?:([\\s\\S]*?)\\r?\\n)?[ \\t]*>{3,}[ \\t]*REPLACE\\b[^\\n]*";
 const FENCE_AROUND_EDITS_RE = new RegExp(
   "```[\\w+-]*[ \\t]*\\n((?:\\s*" + EDIT_BLOCK_SRC + "\\s*)+)```",
-  "g"
+  "gim"
 );
-const REPLY_BLOCK_RE = new RegExp(EDIT_BLOCK_SRC + "|```[\\w+-]*[ \\t]*\\n([\\s\\S]*?)```", "g");
-const INCOMPLETE_EDIT_RE = /(?:^|\n)(?:```[\w+-]*[ \t]*\n)?[ \t]*<<<<<<<[ \t]*SEARCH\b[\s\S]*$/i;
-const STRAY_REPLACE_RE = /^[ \t]*>>>>>>>[ \t]*REPLACE[ \t]*$/gim;
+const REPLY_BLOCK_RE = new RegExp(EDIT_BLOCK_SRC + "|```[\\w+-]*[ \\t]*\\n([\\s\\S]*?)```", "gim");
+const INCOMPLETE_EDIT_RE = /(?:^|\n)(?:```[\w+-]*[ \t]*\n)?[ \t]*<{3,}[ \t]*SEARCH\b[\s\S]*$/i;
+const STRAY_REPLACE_RE = /^[ \t]*>{3,}[ \t]*REPLACE\b[^\n]*$/gim;
 
 function splitAssistantReply(raw: string): ReplyPart[] {
   const content = raw.replace(FENCE_AROUND_EDITS_RE, "$1");
@@ -67,13 +67,13 @@ function splitAssistantReply(raw: string): ReplyPart[] {
     const trimmed = text.replace(STRAY_REPLACE_RE, "").trim();
     if (trimmed) parts.push({ type: "text", text: trimmed });
   };
-  const re = new RegExp(REPLY_BLOCK_RE.source, "g");
+  const re = new RegExp(REPLY_BLOCK_RE.source, "gim");
   let last = 0;
   let m: RegExpExecArray | null;
   while ((m = re.exec(content)) !== null) {
     pushText(content.slice(last, m.index));
     if (m[1] !== undefined) {
-      parts.push({ type: "edit", search: m[1], replace: m[2] });
+      parts.push({ type: "edit", search: m[1], replace: m[2] ?? "" });
     } else {
       parts.push({ type: "code", text: m[3].replace(/\n$/, "") });
     }
