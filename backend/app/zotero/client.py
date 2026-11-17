@@ -269,8 +269,9 @@ def _candidate_to_zotero_payload(
         payload["DOI"] = candidate.doi
     if candidate.abstract:
         payload["abstractNote"] = candidate.abstract
-    if collection_key:
-        payload["collections"] = [collection_key]
+    clean_coll = (collection_key or "").strip()
+    if clean_coll and clean_coll != "root":
+        payload["collections"] = [clean_coll]
     return payload
 
 
@@ -360,33 +361,43 @@ class ZoteroClient:
 
             if has_read:
                 coll_resp = await http.get(f"{self._library_prefix}/collections")
-                if coll_resp.status_code == 200:
-                    raw_colls = coll_resp.json()
-                    if isinstance(raw_colls, list):
-                        for item in raw_colls:
-                            if not isinstance(item, dict):
-                                continue
-                            data = item.get("data") or {}
-                            meta = item.get("meta") or {}
-                            c_key = str(
-                                item.get("key") or data.get("key") or ""
-                            ).strip()
-                            c_name = str(data.get("name") or "Untitled Collection")
-                            num_items = int(meta.get("numItems") or 0)
-                            flagged = _has_prompt_injection(c_name)
-                            if flagged:
-                                injection_warnings.append(
-                                    f"Collection '{c_key}' contains suspicious instruction-override text."
+                if coll_resp.status_code != 200:
+                    return ZoteroKeyCheckResult(
+                        valid=False,
+                        has_read_scope=has_read,
+                        has_write_scope=has_write,
+                        warning_message=(
+                            f"Could not access Zotero {self.library_type} library "
+                            f"'{self.library_id}' (HTTP {coll_resp.status_code}). "
+                            "Check your Library ID and Library Type."
+                        ),
+                    )
+                raw_colls = coll_resp.json()
+                if isinstance(raw_colls, list):
+                    for item in raw_colls:
+                        if not isinstance(item, dict):
+                            continue
+                        data = item.get("data") or {}
+                        meta = item.get("meta") or {}
+                        c_key = str(
+                            item.get("key") or data.get("key") or ""
+                        ).strip()
+                        c_name = str(data.get("name") or "Untitled Collection")
+                        num_items = int(meta.get("numItems") or 0)
+                        flagged = _has_prompt_injection(c_name)
+                        if flagged:
+                            injection_warnings.append(
+                                f"Collection '{c_key}' contains suspicious instruction-override text."
+                            )
+                        if c_key:
+                            collections.append(
+                                ZoteroCollectionInfo(
+                                    key=c_key,
+                                    name=c_name,
+                                    num_items=num_items,
+                                    injection_warning=flagged,
                                 )
-                            if c_key:
-                                collections.append(
-                                    ZoteroCollectionInfo(
-                                        key=c_key,
-                                        name=c_name,
-                                        num_items=num_items,
-                                        injection_warning=flagged,
-                                    )
-                                )
+                            )
 
             warning_msg: str | None = None
             if not has_write:
@@ -441,9 +452,12 @@ class ZoteroClient:
         synced_pdf_count = 0
 
         async with self._create_http_client() as http:
-            items_resp = await http.get(
-                f"{self._library_prefix}/collections/{clean_coll}/items"
+            items_path = (
+                f"{self._library_prefix}/items"
+                if not clean_coll or clean_coll == "root"
+                else f"{self._library_prefix}/collections/{clean_coll}/items"
             )
+            items_resp = await http.get(items_path)
             items_resp.raise_for_status()
             raw_items = items_resp.json()
             if not isinstance(raw_items, list):

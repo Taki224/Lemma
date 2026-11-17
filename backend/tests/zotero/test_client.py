@@ -503,3 +503,123 @@ async def test_sync_refreshes_existing_entries_from_zotero_under_their_local_key
         project_service=project_service, cache_dir=settings.zotero_cache_dir,
     )
     assert (second.added_bib_count, second.updated_bib_count) == (0, 0)
+
+
+@pytest.mark.asyncio
+async def test_verify_key_rejects_inaccessible_library_id() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.startswith("/keys/"):
+            return httpx.Response(
+                200,
+                json={
+                    "key": "valid-key",
+                    "userID": 12345,
+                    "access": {"user": {"library": True, "write": False}},
+                },
+            )
+        if request.url.path == "/users/5W82EMPR/collections":
+            return httpx.Response(400, text="Invalid user ID")
+        return httpx.Response(404)
+
+    client = ZoteroClient(
+        api_key="valid-key",
+        library_id="5W82EMPR",
+        library_type="user",
+        transport=httpx.MockTransport(handler),
+    )
+    result = await client.verify_key_and_list_collections()
+    assert result.valid is False
+    assert result.warning_message is not None
+    assert "5W82EMPR" in result.warning_message
+    assert "400" in result.warning_message
+
+
+@pytest.mark.asyncio
+async def test_sync_root_collection_queries_library_items_and_omits_root_on_push(
+    tmp_path: Path,
+) -> None:
+    settings = bootstrap_data_dir(tmp_path / "lemma_data")
+    db = DatabaseManager(db_path=settings.db_path, backup_dir=settings.backups_dir)
+    db.initialize()
+    project_service = ProjectService(data_dir=settings.data_dir, db=db)
+    meta = project_service.create_project("Root Sync Test")
+
+    requested_paths: list[str] = []
+    post_payloads: list[Any] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requested_paths.append(f"{request.method} {request.url.path}")
+        if request.url.path.startswith("/keys/"):
+            return httpx.Response(
+                200,
+                json={
+                    "key": "rw-key",
+                    "userID": 12345,
+                    "access": {"user": {"library": True, "write": True}},
+                },
+            )
+        if request.url.path == "/users/12345/collections":
+            return httpx.Response(200, json=[])
+        if request.method == "GET" and request.url.path == "/users/12345/items":
+            return httpx.Response(
+                200,
+                json=[
+                    {
+                        "key": "ITEM1",
+                        "data": {
+                            "itemType": "journalArticle",
+                            "title": "Root Library Paper",
+                            "creators": [{"creatorType": "author", "lastName": "Doe", "firstName": "Jane"}],
+                            "date": "2025",
+                        },
+                    }
+                ],
+            )
+        if request.method == "POST" and request.url.path == "/users/12345/items":
+            post_payloads.append(json.loads(request.content.decode("utf-8")))
+            return httpx.Response(200, json={"successful": {"0": {"key": "NEWROOT1"}}})
+        return httpx.Response(400, text=f"Unexpected path: {request.url.path}")
+
+    client = ZoteroClient(
+        api_key="rw-key",
+        library_id="12345",
+        library_type="user",
+        transport=httpx.MockTransport(handler),
+    )
+
+    sync_res = await client.sync_collection_to_project(
+        collection_key="root",
+        project_id=meta.project_id,
+        project_service=project_service,
+        cache_dir=settings.zotero_cache_dir,
+    )
+    assert sync_res.collection_key == "root"
+    assert sync_res.synced_bib_count == 1
+    assert "GET /users/12345/items" in requested_paths
+    assert "GET /users/12345/collections/root/items" not in requested_paths
+
+    candidate = CandidateSource(
+        candidate_id="cand_root",
+        project_id=meta.project_id,
+        cite_key="smith2026",
+        title="Pushed Without Root Collection",
+        authors=["Smith, Alice"],
+        year=2026,
+        doi="10.1000/root.test",
+        abstract="",
+        source_api="semantic_scholar",
+        bibtex="@article{smith2026, title={Pushed Without Root Collection}}",
+        grounding_tier="abstract_only",
+        pdf_path=None,
+        created_at="2026-11-01T00:00:00Z",
+        expires_at="2026-11-15T00:00:00Z",
+        status="accepted",
+    )
+    created_key = await client.create_accepted_item(
+        candidate=candidate,
+        collection_key="root",
+        push_enabled=True,
+    )
+    assert created_key == "NEWROOT1"
+    assert len(post_payloads) == 1
+    assert "collections" not in post_payloads[0][0]
