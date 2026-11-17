@@ -182,3 +182,63 @@ def test_pull_and_push_use_the_github_api_and_leave_local_version_history_withou
     assert any("commit" in cmd for cmd in commands)
     for cmd in commands:
         assert _FORBIDDEN_GIT.isdisjoint(cmd)
+
+
+def test_settings_keys_and_github_link_by_token_name(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+    settings = bootstrap_data_dir(tmp_path / "data").model_copy(
+        update={"workspace_password": "github-router-pass", "privacy_consent_accepted": True}
+    )
+    app = create_app(settings=settings)
+    with TestClient(app) as client:
+        login = client.post("/api/auth/login", json={"password": "github-router-pass"})
+        assert login.status_code == 200
+        headers = {"X-CSRF-Token": login.json()["csrf_token"]}
+
+        created = client.post("/api/projects", json={"name": "Named Token Proj"}, headers=headers)
+        assert created.status_code == 201
+        project_id = created.json()["project_id"]
+
+        # Add a named GitHub key in Settings
+        add_res = client.post(
+            "/api/settings/keys",
+            json={"provider": "github", "name": "work-key", "key": "ghp_work_secret_token"},
+            headers=headers,
+        )
+        assert add_res.status_code == 201
+        assert add_res.json()["github"] == [{"name": "work-key"}]
+        assert "ghp_work_secret_token" not in add_res.text
+
+        # Link repository selecting the key by name
+        linked = client.put(
+            f"/api/projects/{project_id}/github",
+            json={
+                "owner": "acme",
+                "repo": "manuscript",
+                "branch": "main",
+                "subpath": "",
+                "token_name": "work-key",
+            },
+            headers=headers,
+        )
+        assert linked.status_code == 200
+        assert linked.json()["linked"] is True
+        assert linked.json()["has_token"] is True
+        assert linked.json()["token_name"] == "work-key"
+
+        # Selecting a non-existent key name fails with 400
+        missing_key = client.put(
+            f"/api/projects/{project_id}/github",
+            json={
+                "owner": "acme",
+                "repo": "manuscript",
+                "branch": "main",
+                "subpath": "",
+                "token_name": "nonexistent",
+            },
+            headers=headers,
+        )
+        assert missing_key.status_code == 400
+

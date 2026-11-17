@@ -7,7 +7,17 @@ test("two-step zotero wizard completes flow from key verification to collection 
   const startTime = Date.now();
   let interactionCount = 0;
 
-  const mockFetch = vi.fn(async (url: string) => {
+  const mockFetch = vi.fn(async (url: string, init?: RequestInit) => {
+    if (String(url) === "/api/settings/keys") {
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          github: [],
+          zotero: [{ name: "lab-zotero" }, { name: "personal-zotero" }],
+        }),
+      };
+    }
     if (String(url).endsWith("/zotero")) {
       return {
         ok: true,
@@ -23,6 +33,8 @@ test("two-step zotero wizard completes flow from key verification to collection 
       };
     }
     if (String(url).includes("/api/zotero/verify-key")) {
+      const body = JSON.parse(String(init?.body || "{}"));
+      expect(body.key_name).toBe("personal-zotero");
       return {
         ok: true,
         status: 200,
@@ -70,7 +82,7 @@ test("two-step zotero wizard completes flow from key verification to collection 
   const pushCheckbox = screen.getByLabelText(/Push newly accepted citations to Zotero/i) as HTMLInputElement;
   expect(pushCheckbox.checked).toBe(false);
 
-  fireEvent.change(screen.getByLabelText(/Zotero API Key/i), { target: { value: "zot-readonly-secret-key" } });
+  fireEvent.change(screen.getByLabelText(/Zotero API Key/i), { target: { value: "personal-zotero" } });
   fireEvent.change(screen.getByLabelText(/Zotero Library ID/i), { target: { value: "123456" } });
   fireEvent.click(screen.getByRole("button", { name: /Verify Key & Continue/i }));
   interactionCount += 1;

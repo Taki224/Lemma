@@ -26,14 +26,17 @@ zotero_router = APIRouter(tags=["zotero"])
 
 
 class VerifyZoteroKeyRequest(BaseModel):
+    key_name: str | None = None
     api_key: str | None = None
     library_id: str | None = None
     library_type: Literal["user", "group"] | None = None
     push_enabled: bool | None = None
+    project_id: str | None = None
 
 
 class SyncZoteroCollectionRequest(BaseModel):
     collection_key: str | None = None
+    key_name: str | None = None
     api_key: str | None = None
     library_id: str | None = None
     library_type: Literal["user", "group"] | None = None
@@ -50,13 +53,17 @@ def _build_zotero_client_from_state(
     api_key_override: str | None = None,
     library_id_override: str | None = None,
     library_type_override: Literal["user", "group"] | None = None,
+    project_id: str | None = None,
+    key_name_override: str | None = None,
 ) -> ZoteroClient | None:
     secrets_store: SecretsStore = request.app.state.secrets_store
-    api_key = (
-        api_key_override
-        if api_key_override is not None
-        else secrets_store.get("zotero_api_key")
-    )
+    if api_key_override is not None and api_key_override.strip():
+        api_key: str | None = api_key_override.strip()
+    else:
+        api_key, _ = secrets_store.get_zotero_key_for_project(
+            project_id=project_id,
+            key_name=key_name_override,
+        )
     library_id = (
         library_id_override
         if library_id_override is not None
@@ -100,13 +107,13 @@ async def get_zotero_status(
     except PermissionError as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
 
-    api_key = secrets_store.get("zotero_api_key")
+    api_key, resolved_key_name = secrets_store.get_zotero_key_for_project(project_id=project_id)
     library_id = secrets_store.get("zotero_library_id")
     raw_lib_type = secrets_store.get("zotero_library_type") or "user"
     lib_type: Literal["user", "group"] = (
         "group" if str(raw_lib_type).strip().lower() == "group" else "user"
     )
-    return {
+    res: dict[str, Any] = {
         "connected": bool(meta.zotero_collection_key),
         "collection_key": meta.zotero_collection_key,
         "has_credentials": bool(api_key and library_id),
@@ -114,6 +121,9 @@ async def get_zotero_status(
         "library_type": lib_type,
         "push_enabled": bool(settings.zotero_push_enabled),
     }
+    if resolved_key_name:
+        res["key_name"] = resolved_key_name
+    return res
 
 
 @zotero_router.delete("/api/zotero/credentials")
@@ -144,11 +154,20 @@ async def verify_zotero_key(
     secrets_store: SecretsStore = request.app.state.secrets_store
     settings: AppSettings = request.app.state.settings
 
-    effective_api_key = (
-        payload.api_key.strip()
-        if payload.api_key is not None and payload.api_key.strip()
-        else (secrets_store.get("zotero_api_key") or "").strip()
-    )
+    clean_key_name = (payload.key_name or "").strip()
+    if clean_key_name:
+        named_key_val, _ = secrets_store.get_zotero_key_for_project(key_name=clean_key_name)
+        if not named_key_val:
+            raise HTTPException(
+                status_code=400, detail=f"Zotero key '{clean_key_name}' not found in Settings."
+            )
+        effective_api_key = named_key_val
+    elif payload.api_key is not None and payload.api_key.strip():
+        effective_api_key = payload.api_key.strip()
+    else:
+        resolved_key, _ = secrets_store.get_zotero_key_for_project(project_id=payload.project_id)
+        effective_api_key = (resolved_key or "").strip()
+
     effective_library_id = (
         payload.library_id.strip()
         if payload.library_id is not None and payload.library_id.strip()
@@ -176,14 +195,19 @@ async def verify_zotero_key(
 
     check = await client.verify_key_and_list_collections()
     if check.valid:
-        await asyncio.to_thread(
-            secrets_store.update_secrets,
-            {
-                "zotero_api_key": effective_api_key,
-                "zotero_library_id": effective_library_id,
-                "zotero_library_type": effective_library_type,
-            },
-        )
+        updates: dict[str, Any] = {
+            "zotero_library_id": effective_library_id,
+            "zotero_library_type": effective_library_type,
+        }
+        if not clean_key_name:
+            updates["zotero_api_key"] = effective_api_key
+        await asyncio.to_thread(secrets_store.update_secrets, updates)
+        if clean_key_name:
+            await asyncio.to_thread(
+                secrets_store.set_project_zotero_key_name,
+                payload.project_id,
+                clean_key_name,
+            )
         if payload.push_enabled is not None:
             settings.zotero_push_enabled = bool(payload.push_enabled)
             await asyncio.to_thread(save_settings_yaml, settings)
@@ -201,6 +225,7 @@ async def sync_zotero_collection(
 ) -> dict[str, Any]:
     project_service: ProjectService = request.app.state.project_service
     settings: AppSettings = request.app.state.settings
+    secrets_store: SecretsStore = request.app.state.secrets_store
 
     try:
         meta = await asyncio.to_thread(project_service.get_project, project_id)
@@ -216,11 +241,21 @@ async def sync_zotero_collection(
             detail="This project is not linked to a Zotero collection. Run the Zotero setup wizard first.",
         )
 
+    clean_key_name = (payload.key_name or "").strip()
+    if clean_key_name:
+        await asyncio.to_thread(
+            secrets_store.set_project_zotero_key_name,
+            project_id,
+            clean_key_name,
+        )
+
     client = _build_zotero_client_from_state(
         request,
         api_key_override=payload.api_key,
         library_id_override=payload.library_id,
         library_type_override=payload.library_type,
+        project_id=project_id,
+        key_name_override=clean_key_name or None,
     )
     if client is None:
         raise HTTPException(
@@ -320,7 +355,9 @@ async def decide_project_candidates(
         else bool(settings.zotero_push_enabled)
     )
     zotero_client = (
-        _build_zotero_client_from_state(request) if push_enabled else None
+        _build_zotero_client_from_state(request, project_id=project_id)
+        if push_enabled
+        else None
     )
 
     try:

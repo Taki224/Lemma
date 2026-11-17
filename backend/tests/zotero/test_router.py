@@ -280,3 +280,32 @@ def test_wizard_verify_and_sync_endpoints(tmp_path: Path) -> None:
         assert clear_res.status_code == 200
         assert clear_res.json()["has_credentials"] is False
         assert client.get(f"/api/projects/{project_id}/zotero").json()["has_credentials"] is False
+
+        # Named Zotero key flow via /api/settings/keys and key_name
+        add_key = client.post(
+            "/api/settings/keys",
+            json={"provider": "zotero", "name": "my-zotero", "key": "zot-test-key"},
+            headers=headers,
+        )
+        assert add_key.status_code == 201
+        assert add_key.json()["zotero"] == [{"name": "my-zotero"}]
+
+        verify_named = client.post(
+            "/api/zotero/verify-key",
+            json={
+                "key_name": "my-zotero",
+                "project_id": project_id,
+                "library_id": "98765",
+                "library_type": "user",
+                "push_enabled": False,
+            },
+            headers=headers,
+        )
+        assert verify_named.status_code == 200
+        assert verify_named.json()["valid"] is True
+
+        status_named = client.get(f"/api/projects/{project_id}/zotero")
+        assert status_named.status_code == 200
+        assert status_named.json()["has_credentials"] is True
+        assert status_named.json()["key_name"] == "my-zotero"
+

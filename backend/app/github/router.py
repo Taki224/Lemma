@@ -34,6 +34,7 @@ class LinkGithubRequest(BaseModel):
     repo: str
     branch: str = "main"
     subpath: str = ""
+    token_name: str | None = None
     token: str | None = None
     clear_token: bool = False
 
@@ -70,21 +71,31 @@ def _clean_token(raw: str | None) -> str | None:
     return token
 
 
-def _client(request: Request) -> GitHubClient:
-    token = _secrets(request).get("github_token")
+def _client(request: Request, project_id: str | None = None) -> GitHubClient:
+    token, _name, _source = _secrets(request).get_github_token_for_project(project_id=project_id)
     if not token:
         raise HTTPException(status_code=400, detail="Add a GitHub token before syncing.")
     transport: httpx.AsyncBaseTransport | None = getattr(request.app.state, "github_transport", None)
     return GitHubClient(token=token, transport=transport)
 
 
-def _token_state(secrets: SecretsStore) -> tuple[bool, str | None]:
-    source = secrets.secret_source("github_token")
-    return source is not None, source
+def _token_state(secrets: SecretsStore, project_id: str | None = None) -> tuple[bool, str | None, str | None]:
+    token, resolved_name, source = secrets.get_github_token_for_project(project_id=project_id)
+    return bool(token), source, resolved_name
 
 
-def _public_link(link: GithubLink | None, has_token: bool, token_source: str | None) -> dict[str, Any]:
-    payload: dict[str, Any] = {"linked": link is not None, "has_token": has_token, "token_source": token_source}
+def _public_link(
+    link: GithubLink | None,
+    has_token: bool,
+    token_source: str | None,
+    token_name: str | None = None,
+) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "linked": link is not None,
+        "has_token": has_token,
+        "token_source": token_source,
+        "token_name": token_name,
+    }
     if link is None:
         return payload
     payload.update(
@@ -179,8 +190,8 @@ async def get_github_link(
     service = _projects(request)
     _require_project(service, project_id)
     link = _store(request).get(project_id)
-    has_token, token_source = _token_state(_secrets(request))
-    return _public_link(link, has_token, token_source)
+    has_token, token_source, token_name = _token_state(_secrets(request), project_id=project_id)
+    return _public_link(link, has_token, token_source, token_name)
 
 
 @github_router.put("/api/projects/{project_id}/github")
@@ -195,8 +206,9 @@ async def link_github_repo(
     secrets = _secrets(request)
     if body.clear_token and not (body.token or "").strip() and not body.owner.strip() and not body.repo.strip():
         secrets.update_secrets({"github_token": None})
-        has_token, token_source = _token_state(secrets)
-        return _public_link(_store(request).get(project_id), has_token, token_source)
+        secrets.set_project_github_token_name(project_id, None)
+        has_token, token_source, token_name = _token_state(secrets, project_id=project_id)
+        return _public_link(_store(request).get(project_id), has_token, token_source, token_name)
     try:
         owner = normalize_owner(body.owner)
         repo = normalize_repo(body.repo)
@@ -205,16 +217,25 @@ async def link_github_repo(
         token = _clean_token(body.token)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    if token:
+
+    clean_token_name = (body.token_name or "").strip()
+    if clean_token_name:
+        tok_val, _, _ = secrets.get_github_token_for_project(token_name=clean_token_name)
+        if not tok_val:
+            raise HTTPException(status_code=400, detail=f"GitHub key '{clean_token_name}' not found in Settings.")
+        secrets.set_project_github_token_name(project_id, clean_token_name)
+    elif token:
         secrets.update_secrets({"github_token": token})
         redactor = getattr(request.app.state, "secret_redactor", None)
         if redactor is not None:
             redactor.register_secrets([token])
     elif body.clear_token:
         secrets.update_secrets({"github_token": None})
+        secrets.set_project_github_token_name(project_id, None)
+
     link = _store(request).upsert(project_id, owner, repo, branch, subpath)
-    has_token, token_source = _token_state(secrets)
-    return _public_link(link, has_token, token_source)
+    has_token, token_source, token_name = _token_state(secrets, project_id=project_id)
+    return _public_link(link, has_token, token_source, token_name)
 
 
 @github_router.delete("/api/projects/{project_id}/github")
@@ -226,8 +247,10 @@ async def unlink_github_repo(
     service = _projects(request)
     _require_project(service, project_id)
     _store(request).delete(project_id)
-    has_token, token_source = _token_state(_secrets(request))
-    return _public_link(None, has_token, token_source)
+    secrets = _secrets(request)
+    secrets.set_project_github_token_name(project_id, None)
+    has_token, token_source, token_name = _token_state(secrets, project_id=project_id)
+    return _public_link(None, has_token, token_source, token_name)
 
 
 @github_router.post("/api/projects/{project_id}/github/pull")
@@ -240,7 +263,7 @@ async def pull_github_repo(
     service = _projects(request)
     _require_project(service, project_id)
     git_snapshots: GitSnapshotService = request.app.state.git_snapshots
-    sync = GithubSync(service, _store(request), _client(request))
+    sync = GithubSync(service, _store(request), _client(request, project_id=project_id))
 
     def snapshot(project_dir: Path, message: str) -> None:
         _local_snapshot(git_snapshots, project_dir, message)
@@ -266,7 +289,7 @@ async def push_github_repo(
 ) -> dict[str, Any]:
     service = _projects(request)
     _require_project(service, project_id)
-    sync = GithubSync(service, _store(request), _client(request))
+    sync = GithubSync(service, _store(request), _client(request, project_id=project_id))
     try:
         result = await sync.push(
             project_id,

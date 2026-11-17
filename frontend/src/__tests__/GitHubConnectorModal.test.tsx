@@ -7,12 +7,22 @@ test("links a repository folder and confirms a pull that would remove local file
   const pulls: Array<Record<string, unknown>> = [];
   const mockFetch = vi.fn(async (url: string, init?: RequestInit) => {
     const method = init?.method || "GET";
+    if (method === "GET" && String(url) === "/api/settings/keys") {
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          github: [{ name: "personal" }, { name: "work" }],
+          zotero: [],
+        }),
+      };
+    }
     if (method === "GET" && String(url).endsWith("/github")) {
       return { ok: true, status: 200, json: async () => ({ linked: false, has_token: false }) };
     }
     if (method === "PUT") {
       const body = JSON.parse(String(init?.body || "{}"));
-      expect(body.token).toBe("ghp_test_token_value");
+      expect(body.token_name).toBe("work");
       expect(body.subpath).toBe("paper");
       return {
         ok: true,
@@ -25,6 +35,7 @@ test("links a repository folder and confirms a pull that would remove local file
           subpath: "paper",
           last_synced_sha: null,
           has_token: true,
+          token_name: "work",
         }),
       };
     }
@@ -69,7 +80,7 @@ test("links a repository folder and confirms a pull that would remove local file
   );
 
   await screen.findByText(/Local version history stays in this workspace/i);
-  fireEvent.change(screen.getByLabelText("GitHub token"), { target: { value: "ghp_test_token_value" } });
+  fireEvent.change(screen.getByLabelText("GitHub key"), { target: { value: "work" } });
   fireEvent.change(screen.getByLabelText("GitHub owner"), { target: { value: "acme" } });
   fireEvent.change(screen.getByLabelText("GitHub repository"), { target: { value: "manuscript" } });
   fireEvent.change(screen.getByLabelText("Folder in the repository"), { target: { value: "paper" } });
@@ -179,6 +190,6 @@ test("shows connected status card and toggles edit settings when already linked"
   fireEvent.click(screen.getByRole("button", { name: "Edit settings" }));
   await screen.findByLabelText("GitHub owner");
   expect(screen.getByRole("button", { name: "Save changes" })).toBeInTheDocument();
-  expect(screen.getByRole("button", { name: "Remove token" })).toBeInTheDocument();
+  expect(screen.getByLabelText("GitHub key")).toBeInTheDocument();
 });
 

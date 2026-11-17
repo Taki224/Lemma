@@ -11,6 +11,7 @@ from app.ai.model_registry import EnabledModel, ModelRegistry
 from app.ai.openrouter import OpenRouterClient
 from app.auth.session import SessionRecord, require_authenticated_session, require_csrf
 from app.config import AppSettings, save_settings_yaml
+from app.config_secrets import SecretsStore
 
 _DEFAULT_CONTEXT_LENGTH = 128000
 _DEFAULT_LOCAL_CONTEXT_LENGTH = 32768
@@ -336,3 +337,76 @@ async def update_web_search(
         await asyncio.to_thread(save_settings_yaml, updated)
         settings.web_search_enabled = payload.enabled
         return {"enabled": settings.web_search_enabled}
+
+
+class SaveNamedKeyRequest(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    provider: Literal["github", "zotero"]
+    name: str = Field(min_length=1, max_length=100)
+    key: str = Field(min_length=1, max_length=512)
+
+
+def _keys_payload(secrets: SecretsStore) -> dict[str, list[dict[str, str]]]:
+    return {
+        "github": secrets.list_github_tokens(),
+        "zotero": secrets.list_zotero_keys(),
+    }
+
+
+@models_router.get("/api/settings/keys")
+async def list_named_keys(
+    request: Request,
+    _session: SessionRecord = Depends(require_authenticated_session),
+) -> dict[str, list[dict[str, str]]]:
+    secrets: SecretsStore = request.app.state.secrets_store
+    return _keys_payload(secrets)
+
+
+@models_router.post("/api/settings/keys", status_code=201)
+async def save_named_key(
+    payload: SaveNamedKeyRequest,
+    request: Request,
+    _session: SessionRecord = Depends(require_authenticated_session),
+    _csrf: None = Depends(require_csrf),
+) -> dict[str, list[dict[str, str]]]:
+    secrets: SecretsStore = request.app.state.secrets_store
+    clean_name = payload.name.strip()
+    clean_key = payload.key.strip()
+    if any(ch.isspace() for ch in clean_key):
+        raise HTTPException(
+            status_code=400,
+            detail="Key or token must not contain whitespace.",
+        )
+    if payload.provider == "github" and len(clean_key) < 8:
+        raise HTTPException(
+            status_code=400,
+            detail="GitHub token must be a single token of 8 to 512 characters.",
+        )
+    try:
+        await asyncio.to_thread(
+            secrets.set_named_key, payload.provider, clean_name, clean_key
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    redactor = getattr(request.app.state, "secret_redactor", None)
+    if redactor is not None and len(clean_key) >= 6:
+        redactor.register_secrets([clean_key])
+
+    return _keys_payload(secrets)
+
+
+@models_router.delete("/api/settings/keys/{provider}/{name:path}")
+async def delete_named_key(
+    provider: Literal["github", "zotero"],
+    name: str,
+    request: Request,
+    _session: SessionRecord = Depends(require_authenticated_session),
+    _csrf: None = Depends(require_csrf),
+) -> dict[str, list[dict[str, str]]]:
+    secrets: SecretsStore = request.app.state.secrets_store
+    removed = await asyncio.to_thread(secrets.remove_named_key, provider, name)
+    if not removed:
+        raise HTTPException(status_code=404, detail="Key not found.")
+    return _keys_payload(secrets)

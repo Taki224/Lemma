@@ -70,3 +70,44 @@ def test_secrets_saved_with_0600_mode_lowercase_keys_and_auto_session_secret(
     for val in masked.values():
         assert isinstance(val, bool)
         assert "sk-or" not in str(val)
+
+
+def test_named_github_and_zotero_keys_stored_and_redacted(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    for env_key in ("GITHUB_TOKEN", "ZOTERO_API_KEY"):
+        monkeypatch.delenv(env_key, raising=False)
+
+    secrets_path = tmp_path / "config" / "secrets.yaml"
+    store = SecretsStore(secrets_path=secrets_path)
+
+    store.set_named_key("github", "personal", "ghp_personal_token_123")
+    store.set_named_key("github", "work", "ghp_work_token_456")
+    store.set_named_key("zotero", "lab-zot", "zot_lab_key_789")
+
+    assert store.list_github_tokens() == [{"name": "personal"}, {"name": "work"}]
+    assert store.list_zotero_keys() == [{"name": "lab-zot"}]
+
+    # Reload from disk and verify persistence
+    reloaded = SecretsStore(secrets_path=secrets_path)
+    assert reloaded.list_github_tokens() == [{"name": "personal"}, {"name": "work"}]
+    assert reloaded.list_zotero_keys() == [{"name": "lab-zot"}]
+
+    tok, name, src = reloaded.get_github_token_for_project(token_name="work")
+    assert (tok, name, src) == ("ghp_work_token_456", "work", "saved")
+
+    reloaded.set_project_github_token_name("proj-1", "work")
+    tok_proj, name_proj, _ = reloaded.get_github_token_for_project(project_id="proj-1")
+    assert (tok_proj, name_proj) == ("ghp_work_token_456", "work")
+
+    zot_key, zot_name = reloaded.get_zotero_key_for_project(key_name="lab-zot")
+    assert (zot_key, zot_name) == ("zot_lab_key_789", "lab-zot")
+
+    redactable = reloaded.get_redactable_values()
+    assert "ghp_personal_token_123" in redactable
+    assert "ghp_work_token_456" in redactable
+    assert "zot_lab_key_789" in redactable
+
+    assert reloaded.remove_named_key("github", "work") is True
+    assert reloaded.list_github_tokens() == [{"name": "personal"}]
+

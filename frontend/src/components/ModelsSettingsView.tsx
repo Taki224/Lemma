@@ -14,6 +14,15 @@ interface CatalogModel {
   completion_price_per_token: number;
 }
 
+interface NamedKeyEntry {
+  name: string;
+}
+
+interface SavedKeysState {
+  github: NamedKeyEntry[];
+  zotero: NamedKeyEntry[];
+}
+
 const SEARCH_DEBOUNCE_MS = 250;
 const SMART_ROUTING_TIMEOUT_MS = 15_000;
 
@@ -49,6 +58,10 @@ export function ModelsSettingsView({
   const [webSearchEnabled, setWebSearchEnabled] = useState<boolean>(false);
   const [webSearchLoaded, setWebSearchLoaded] = useState<boolean>(false);
   const webSearchSaveSeq = useRef(0);
+  const [savedKeys, setSavedKeys] = useState<SavedKeysState>({ github: [], zotero: [] });
+  const [keyProvider, setKeyProvider] = useState<"github" | "zotero">("github");
+  const [keyName, setKeyName] = useState<string>("");
+  const [keyValue, setKeyValue] = useState<string>("");
 
   useEffect(() => {
     let active = true;
@@ -169,6 +182,87 @@ export function ModelsSettingsView({
       controller.abort();
     };
   }, []);
+
+  useEffect(() => {
+    let active = true;
+    fetch("/api/settings/keys")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data: { github?: NamedKeyEntry[]; zotero?: NamedKeyEntry[] } | null) => {
+        if (!active || !data) return;
+        setSavedKeys({
+          github: Array.isArray(data.github) ? data.github : [],
+          zotero: Array.isArray(data.zotero) ? data.zotero : [],
+        });
+      })
+      .catch(() => {
+        // Keep empty list if keys endpoint is unavailable in test mocks.
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const addNamedKey = async () => {
+    const cleanName = keyName.trim();
+    const cleanVal = keyValue.trim();
+    if (!cleanName || !cleanVal) {
+      setErrorMessage("Enter both a key name and value.");
+      return;
+    }
+    setErrorMessage(null);
+    try {
+      const res = await fetch("/api/settings/keys", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-CSRF-Token": csrfToken,
+        },
+        body: JSON.stringify({
+          provider: keyProvider,
+          name: cleanName,
+          key: cleanVal,
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        setErrorMessage(err.detail || `Request failed (HTTP ${res.status})`);
+        return;
+      }
+      const data: { github?: NamedKeyEntry[]; zotero?: NamedKeyEntry[] } = await res.json();
+      setSavedKeys({
+        github: Array.isArray(data.github) ? data.github : [],
+        zotero: Array.isArray(data.zotero) ? data.zotero : [],
+      });
+      setKeyName("");
+      setKeyValue("");
+    } catch (err: unknown) {
+      setErrorMessage(err instanceof Error ? err.message : "Request failed");
+    }
+  };
+
+  const removeNamedKey = async (provider: "github" | "zotero", name: string) => {
+    setErrorMessage(null);
+    try {
+      const res = await fetch(`/api/settings/keys/${provider}/${encodeURIComponent(name)}`, {
+        method: "DELETE",
+        headers: {
+          "X-CSRF-Token": csrfToken,
+        },
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        setErrorMessage(err.detail || `Request failed (HTTP ${res.status})`);
+        return;
+      }
+      const data: { github?: NamedKeyEntry[]; zotero?: NamedKeyEntry[] } = await res.json();
+      setSavedKeys({
+        github: Array.isArray(data.github) ? data.github : [],
+        zotero: Array.isArray(data.zotero) ? data.zotero : [],
+      });
+    } catch (err: unknown) {
+      setErrorMessage(err instanceof Error ? err.message : "Request failed");
+    }
+  };
 
   const persistWebSearch = async (enabled: boolean) => {
     const seq = ++webSearchSaveSeq.current;
@@ -530,6 +624,102 @@ export function ModelsSettingsView({
           {errorMessage}
         </div>
       )}
+
+      <section className="lemma-settings-card" data-testid="integration-keys-section">
+        <h3>Git &amp; Zotero Keys</h3>
+        <p className="lemma-subtext">
+          Save named GitHub tokens and Zotero API keys here, then select them by name when connecting a project.
+        </p>
+        <div className="lemma-model-manual-row">
+          <select
+            className="lemma-settings-input"
+            style={{ flex: "0 0 140px" }}
+            aria-label="Key type"
+            value={keyProvider}
+            onChange={(e) => setKeyProvider(e.target.value === "zotero" ? "zotero" : "github")}
+          >
+            <option value="github">GitHub</option>
+            <option value="zotero">Zotero</option>
+          </select>
+          <input
+            type="text"
+            className="lemma-settings-input"
+            aria-label="Key name"
+            placeholder="Key name (e.g. Personal, Lab)"
+            value={keyName}
+            onChange={(e) => setKeyName(e.target.value)}
+          />
+          <input
+            type="password"
+            className="lemma-settings-input"
+            aria-label="Key value"
+            placeholder={
+              keyProvider === "github"
+                ? "Paste GitHub personal access token"
+                : "Paste Zotero private key"
+            }
+            value={keyValue}
+            onChange={(e) => setKeyValue(e.target.value)}
+            autoComplete="off"
+          />
+          <button
+            type="button"
+            className="lemma-btn lemma-btn-primary"
+            aria-label="Add Key"
+            onClick={() => void addNamedKey()}
+          >
+            Add Key
+          </button>
+        </div>
+        {savedKeys.github.length === 0 && savedKeys.zotero.length === 0 ? (
+          <p className="lemma-empty-state" data-testid="no-keys-notice">
+            No Git or Zotero keys saved yet.
+          </p>
+        ) : (
+          <ul className="lemma-model-list" data-testid="saved-keys-list">
+            {savedKeys.github.map((k) => (
+              <li
+                key={`github:${k.name}`}
+                className="lemma-model-row"
+                data-testid={`saved-key-github-${k.name}`}
+              >
+                <div className="lemma-model-row-main">
+                  <span className="lemma-model-name">{k.name}</span>
+                </div>
+                <span className="lemma-model-badge lemma-badge-info">GitHub</span>
+                <button
+                  type="button"
+                  className="lemma-btn lemma-btn-secondary lemma-btn-xs"
+                  aria-label={`Remove GitHub key ${k.name}`}
+                  onClick={() => void removeNamedKey("github", k.name)}
+                >
+                  Remove
+                </button>
+              </li>
+            ))}
+            {savedKeys.zotero.map((k) => (
+              <li
+                key={`zotero:${k.name}`}
+                className="lemma-model-row"
+                data-testid={`saved-key-zotero-${k.name}`}
+              >
+                <div className="lemma-model-row-main">
+                  <span className="lemma-model-name">{k.name}</span>
+                </div>
+                <span className="lemma-model-badge lemma-badge-success">Zotero</span>
+                <button
+                  type="button"
+                  className="lemma-btn lemma-btn-secondary lemma-btn-xs"
+                  aria-label={`Remove Zotero key ${k.name}`}
+                  onClick={() => void removeNamedKey("zotero", k.name)}
+                >
+                  Remove
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
 
       <section className="lemma-settings-card" data-testid="enabled-models-section">
         <h3>Enabled models</h3>

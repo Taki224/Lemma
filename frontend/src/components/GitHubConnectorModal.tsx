@@ -9,6 +9,11 @@ export interface GithubLinkStatus {
   last_synced_sha?: string | null;
   has_token?: boolean;
   token_source?: "environment" | "saved" | null;
+  token_name?: string | null;
+}
+
+interface NamedKeyOption {
+  name: string;
 }
 
 export interface GithubSyncResult {
@@ -71,7 +76,8 @@ export function GitHubConnectorModal({
   const [repo, setRepo] = useState<string>("");
   const [branch, setBranch] = useState<string>("main");
   const [subpath, setSubpath] = useState<string>("");
-  const [token, setToken] = useState<string>("");
+  const [selectedTokenName, setSelectedTokenName] = useState<string>("");
+  const [githubKeys, setGithubKeys] = useState<NamedKeyOption[]>([]);
   const [message, setMessage] = useState<string>("Update project files");
   const [link, setLink] = useState<GithubLinkStatus | null>(null);
   const [editingSettings, setEditingSettings] = useState<boolean>(false);
@@ -99,7 +105,7 @@ export function GitHubConnectorModal({
 
   useEffect(() => {
     if (!isOpen) {
-      setToken("");
+      setSelectedTokenName("");
       setConfirmAction(null);
       setConfirmPaths([]);
       setEditingSettings(false);
@@ -108,14 +114,29 @@ export function GitHubConnectorModal({
     let active = true;
     setErrorMessage(null);
     setSummary(null);
-    fetchImpl(`/api/projects/${projectId}/github`)
-      .then(async (res) => {
+
+    Promise.all([
+      fetchImpl(`/api/projects/${projectId}/github`).then(async (res) => {
         const data = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(readBlock(data).message);
         return data as GithubLinkStatus;
-      })
-      .then((data) => {
+      }),
+      fetchImpl("/api/settings/keys")
+        .then(async (res) => (res.ok ? res.json() : null))
+        .catch(() => null),
+    ])
+      .then(([data, keysData]) => {
         if (!active) return;
+        const loadedKeys: NamedKeyOption[] = Array.isArray(keysData?.github)
+          ? keysData.github
+          : [];
+        if (data.token_name && !loadedKeys.some((k) => k.name === data.token_name)) {
+          loadedKeys.push({ name: data.token_name });
+        }
+        setGithubKeys(loadedKeys);
+        setSelectedTokenName(
+          data.token_name || (loadedKeys.length > 0 ? loadedKeys[0].name : "")
+        );
         setLink(data);
         onLinkChange?.(Boolean(data.linked));
         if (data.linked) {
@@ -168,7 +189,9 @@ export function GitHubConnectorModal({
         branch: branch.trim() || "main",
         subpath: subpath.trim(),
       };
-      if (token.trim()) payload.token = token.trim();
+      if (selectedTokenName.trim()) {
+        payload.token_name = selectedTokenName.trim();
+      }
       const { res, data } = await send(`/api/projects/${projectId}/github`, "PUT", payload);
       if (!res.ok) {
         setErrorMessage(readBlock(data).message);
@@ -177,7 +200,9 @@ export function GitHubConnectorModal({
       const nextLink = data as GithubLinkStatus;
       setLink(nextLink);
       onLinkChange?.(Boolean(nextLink.linked));
-      setToken("");
+      if (nextLink.token_name) {
+        setSelectedTokenName(nextLink.token_name);
+      }
       setEditingSettings(false);
       setSummary("GitHub repository linked.");
     } catch (err) {
@@ -256,43 +281,16 @@ export function GitHubConnectorModal({
     }
   };
 
-  const clearToken = async () => {
-    setBusy(true);
-    setErrorMessage(null);
-    setSummary(null);
-    try {
-      const payload = link?.linked
-        ? {
-            owner: link.owner || "",
-            repo: link.repo || "",
-            branch: link.branch || "main",
-            subpath: link.subpath || "",
-            clear_token: true,
-          }
-        : { owner: "", repo: "", clear_token: true };
-      const { res, data } = await send(`/api/projects/${projectId}/github`, "PUT", payload);
-      if (!res.ok) {
-        setErrorMessage(readBlock(data).message);
-        return;
-      }
-      setLink(data as GithubLinkStatus);
-      setToken("");
-      setSummary("Saved GitHub token removed. Local version history is unchanged.");
-    } catch (err) {
-      setErrorMessage(err instanceof Error ? err.message : "Could not remove the GitHub token.");
-    } finally {
-      setBusy(false);
-    }
-  };
-
   const linked = Boolean(link?.linked);
   const showForm = !linked || editingSettings;
   const savedFolder = link?.subpath ? link.subpath : "Whole repository";
-  const tokenLabel = link?.token_source === "environment"
-    ? "GITHUB_TOKEN (env)"
-    : link?.has_token
-      ? "Saved token"
-      : "Not set";
+  const tokenLabel = link?.token_name
+    ? link.token_name
+    : link?.token_source === "environment"
+      ? "GITHUB_TOKEN (env)"
+      : link?.has_token
+        ? "Saved token"
+        : "Not set";
 
   return (
     <>
@@ -439,35 +437,34 @@ export function GitHubConnectorModal({
 
             <div className="lemma-project-create-field">
               <div className="lemma-field-label-row">
-                <label htmlFor="github-token-input">GitHub token</label>
-                {link?.token_source === "saved" ? (
-                  <button
-                    type="button"
-                    className="lemma-inline-link-btn"
-                    disabled={busy}
-                    onClick={clearToken}
-                  >
-                    Remove token
-                  </button>
-                ) : null}
+                <label htmlFor="github-token-select">GitHub key</label>
               </div>
-              <input
-                id="github-token-input"
+              <select
+                id="github-token-select"
                 className="lemma-project-create-input"
-                aria-label="GitHub token"
-                type="password"
-                value={token}
-                onChange={(event) => setToken(event.target.value)}
-                placeholder={
-                  link?.token_source === "environment"
-                    ? "GITHUB_TOKEN from the environment is used"
-                    : link?.has_token
-                      ? "Saved token stays if this is left blank"
-                      : "Paste a personal access token"
-                }
-                autoComplete="off"
-                autoFocus={!linked}
-              />
+                aria-label="GitHub key"
+                value={selectedTokenName}
+                onChange={(event) => setSelectedTokenName(event.target.value)}
+              >
+                {githubKeys.length === 0 ? (
+                  <option value="">
+                    {link?.token_source === "environment"
+                      ? "GITHUB_TOKEN (environment)"
+                      : link?.has_token
+                        ? "Saved token"
+                        : "No GitHub keys configured in Settings"}
+                  </option>
+                ) : (
+                  <>
+                    <option value="">Select a GitHub key</option>
+                    {githubKeys.map((k) => (
+                      <option key={k.name} value={k.name}>
+                        {k.name}
+                      </option>
+                    ))}
+                  </>
+                )}
+              </select>
             </div>
 
             <div className="lemma-zotero-split">
@@ -536,7 +533,7 @@ export function GitHubConnectorModal({
                     setRepo(link?.repo || "");
                     setBranch(link?.branch || "main");
                     setSubpath(link?.subpath || "");
-                    setToken("");
+                    setSelectedTokenName(link?.token_name || (githubKeys[0]?.name ?? ""));
                     setErrorMessage(null);
                     setEditingSettings(false);
                   }}
