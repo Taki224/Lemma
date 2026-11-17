@@ -22,6 +22,7 @@ models_router = APIRouter(tags=["models"])
 _smart_routing_update_lock = asyncio.Lock()
 _chat_naming_update_lock = asyncio.Lock()
 _web_search_update_lock = asyncio.Lock()
+_apply_patch_update_lock = asyncio.Lock()
 _local_config_update_lock = asyncio.Lock()
 
 
@@ -337,6 +338,34 @@ async def update_web_search(
         await asyncio.to_thread(save_settings_yaml, updated)
         settings.web_search_enabled = payload.enabled
         return {"enabled": settings.web_search_enabled}
+
+
+class ApplyPatchSettings(BaseModel):
+    enabled: bool = False
+
+
+@models_router.get("/api/settings/apply-patch")
+async def get_apply_patch(
+    request: Request,
+    _session: SessionRecord = Depends(require_authenticated_session),
+) -> dict[str, Any]:
+    settings: AppSettings = request.app.state.settings
+    return {"enabled": settings.apply_patch_enabled}
+
+
+@models_router.put("/api/settings/apply-patch")
+async def update_apply_patch(
+    payload: ApplyPatchSettings,
+    request: Request,
+    _session: SessionRecord = Depends(require_authenticated_session),
+    _csrf: None = Depends(require_csrf),
+) -> dict[str, Any]:
+    settings: AppSettings = request.app.state.settings
+    async with _apply_patch_update_lock:
+        updated = settings.model_copy(update={"apply_patch_enabled": payload.enabled})
+        await asyncio.to_thread(save_settings_yaml, updated)
+        settings.apply_patch_enabled = payload.enabled
+        return {"enabled": settings.apply_patch_enabled}
 
 
 class SaveNamedKeyRequest(BaseModel):
