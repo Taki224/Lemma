@@ -20,9 +20,14 @@ export interface ZoteroProjectStatus {
   connected: boolean;
   collection_key: string | null;
   has_credentials: boolean;
+  key_name?: string;
   library_id: string;
   library_type: "user" | "group";
   push_enabled: boolean;
+}
+
+interface NamedKeyOption {
+  name: string;
 }
 
 export interface ZoteroWizardModalProps {
@@ -50,7 +55,8 @@ export function ZoteroWizardModal({
   const [view, setView] = useState<ZoteroView>("credentials");
   const [status, setStatus] = useState<ZoteroProjectStatus | null>(null);
 
-  const [apiKey, setApiKey] = useState<string>("");
+  const [selectedKeyName, setSelectedKeyName] = useState<string>("");
+  const [zoteroKeys, setZoteroKeys] = useState<NamedKeyOption[]>([]);
   const [libraryId, setLibraryId] = useState<string>("");
   const [libraryType, setLibraryType] = useState<"user" | "group">("user");
   const [pushEnabled, setPushEnabled] = useState<boolean>(false);
@@ -80,7 +86,14 @@ export function ZoteroWizardModal({
   }, [isOpen]);
 
   const loadCollections = async (
-    payload: { api_key?: string; library_id?: string; library_type?: "user" | "group"; push_enabled?: boolean },
+    payload: {
+      key_name?: string;
+      project_id?: string;
+      api_key?: string;
+      library_id?: string;
+      library_type?: "user" | "group";
+      push_enabled?: boolean;
+    },
     preferredKey?: string | null,
   ): Promise<boolean> => {
     setErrorMessage(null);
@@ -127,7 +140,7 @@ export function ZoteroWizardModal({
 
   useEffect(() => {
     if (!isOpen) {
-      setApiKey("");
+      setSelectedKeyName("");
       setErrorMessage(null);
       setSyncSummary(null);
       return;
@@ -137,19 +150,34 @@ export function ZoteroWizardModal({
     setSyncSummary(null);
     setWarningMessage(null);
 
-    fetchImpl(`/api/projects/${projectId}/zotero`)
-      .then(async (res) => {
+    Promise.all([
+      fetchImpl(`/api/projects/${projectId}/zotero`).then(async (res) => {
         if (!res.ok) return null;
         return (await res.json()) as ZoteroProjectStatus;
-      })
-      .then(async (data) => {
+      }),
+      fetchImpl("/api/settings/keys")
+        .then(async (res) => (res.ok ? res.json() : null))
+        .catch(() => null),
+    ])
+      .then(async ([data, keysData]) => {
         if (!active) return;
+        const loadedKeys: NamedKeyOption[] = Array.isArray(keysData?.zotero)
+          ? keysData.zotero
+          : [];
+        if (data?.key_name && !loadedKeys.some((k) => k.name === data.key_name)) {
+          loadedKeys.push({ name: data.key_name });
+        }
+        setZoteroKeys(loadedKeys);
         if (!data) {
           setStatus(null);
+          setSelectedKeyName(loadedKeys.length > 0 ? loadedKeys[0].name : "");
           setView("credentials");
           return;
         }
         setStatus(data);
+        setSelectedKeyName(
+          data.key_name || (loadedKeys.length > 0 ? loadedKeys[0].name : "")
+        );
         setLibraryId(data.library_id || "");
         setLibraryType(data.library_type === "group" ? "group" : "user");
         setPushEnabled(Boolean(data.push_enabled));
@@ -157,10 +185,6 @@ export function ZoteroWizardModal({
         if (data.connected) {
           setSelectedCollectionKey(data.collection_key || "");
           setView("connected");
-        } else if (data.has_credentials) {
-          const ok = await loadCollections({}, null);
-          if (!active) return;
-          setView(ok ? "collection" : "credentials");
         } else {
           setView("credentials");
         }
@@ -183,11 +207,11 @@ export function ZoteroWizardModal({
   const handleVerifyKey = async () => {
     setErrorMessage(null);
     const hasSavedCreds = Boolean(status?.has_credentials);
-    if (!hasSavedCreds && (!apiKey.trim() || !libraryId.trim())) {
-      setErrorMessage("Please enter both your Zotero API Key and Library ID.");
+    if (!hasSavedCreds && (!selectedKeyName.trim() || !libraryId.trim())) {
+      setErrorMessage("Please select a Zotero key and enter your Library ID.");
       return;
     }
-    if (hasSavedCreds && !libraryId.trim() && !apiKey.trim()) {
+    if (hasSavedCreds && !libraryId.trim() && !selectedKeyName.trim()) {
       // Allow reusing saved credentials
     } else if (!libraryId.trim()) {
       setErrorMessage("Please enter your Zotero Library ID.");
@@ -195,25 +219,41 @@ export function ZoteroWizardModal({
     }
 
     const payload: {
-      api_key?: string;
+      key_name?: string;
+      project_id: string;
       library_id?: string;
       library_type: "user" | "group";
       push_enabled: boolean;
     } = {
+      project_id: projectId,
       library_type: libraryType,
       push_enabled: pushEnabled,
     };
-    if (apiKey.trim()) payload.api_key = apiKey.trim();
+    if (selectedKeyName.trim()) payload.key_name = selectedKeyName.trim();
     if (libraryId.trim()) payload.library_id = libraryId.trim();
 
     const ok = await loadCollections(payload, status?.collection_key);
     if (ok) {
       setStatus((prev) =>
         prev
-          ? { ...prev, has_credentials: true, library_id: libraryId.trim() || prev.library_id, library_type: libraryType, push_enabled: pushEnabled }
-          : { connected: false, collection_key: null, has_credentials: true, library_id: libraryId.trim(), library_type: libraryType, push_enabled: pushEnabled }
+          ? {
+              ...prev,
+              has_credentials: true,
+              key_name: selectedKeyName.trim() || prev.key_name,
+              library_id: libraryId.trim() || prev.library_id,
+              library_type: libraryType,
+              push_enabled: pushEnabled,
+            }
+          : {
+              connected: false,
+              collection_key: null,
+              has_credentials: true,
+              key_name: selectedKeyName.trim() || undefined,
+              library_id: libraryId.trim(),
+              library_type: libraryType,
+              push_enabled: pushEnabled,
+            }
       );
-      setApiKey("");
       setView("collection");
     }
   };
@@ -223,15 +263,16 @@ export function ZoteroWizardModal({
     setIsLoading(true);
     try {
       const targetCollection = collectionKeyOverride ?? selectedCollectionKey;
+      const syncBody: Record<string, string> = {};
+      if (targetCollection) syncBody.collection_key = targetCollection;
+      if (selectedKeyName.trim()) syncBody.key_name = selectedKeyName.trim();
       const resp = await fetchImpl(`/api/projects/${projectId}/zotero/sync`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           "X-CSRF-Token": csrfToken,
         },
-        body: JSON.stringify(
-          targetCollection ? { collection_key: targetCollection } : {}
-        ),
+        body: JSON.stringify(syncBody),
       });
       const data = await resp.json().catch(() => ({}));
       if (!resp.ok) {
@@ -293,37 +334,11 @@ export function ZoteroWizardModal({
       }
       setStatus((prev) => (prev ? { ...prev, connected: false, collection_key: null } : null));
       onDisconnected?.();
-      setView(status?.has_credentials ? "collection" : "credentials");
+      setView("credentials");
     } catch (err) {
       setErrorMessage(
         err instanceof Error ? err.message : "Network error disconnecting Zotero."
       );
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleClearCredentials = async () => {
-    setErrorMessage(null);
-    setIsLoading(true);
-    try {
-      const resp = await fetchImpl("/api/zotero/credentials", {
-        method: "DELETE",
-        headers: { "X-CSRF-Token": csrfToken },
-      });
-      if (!resp.ok) {
-        setErrorMessage("Could not clear saved Zotero credentials.");
-        return;
-      }
-      setStatus((prev) =>
-        prev ? { ...prev, has_credentials: false, library_id: "", library_type: "user" } : null
-      );
-      setApiKey("");
-      setLibraryId("");
-      setLibraryType("user");
-      setCollections([]);
-    } catch {
-      setErrorMessage("Network error clearing Zotero credentials.");
     } finally {
       setIsLoading(false);
     }
@@ -391,7 +406,13 @@ export function ZoteroWizardModal({
                   disabled={isLoading}
                   onClick={async () => {
                     setSyncSummary(null);
-                    const ok = await loadCollections({}, status?.collection_key);
+                    const ok = await loadCollections(
+                      {
+                        project_id: projectId,
+                        ...(selectedKeyName ? { key_name: selectedKeyName } : {}),
+                      },
+                      status?.collection_key
+                    );
                     if (ok) setView("collection");
                   }}
                 >
@@ -482,32 +503,32 @@ export function ZoteroWizardModal({
 
             <div className="lemma-project-create-field">
               <div className="lemma-field-label-row">
-                <label htmlFor="zotero-api-key-input">Zotero API Key</label>
-                {status?.has_credentials && !isConnected ? (
-                  <button
-                    type="button"
-                    className="lemma-inline-link-btn"
-                    disabled={isLoading}
-                    onClick={handleClearCredentials}
-                  >
-                    Clear saved key
-                  </button>
-                ) : null}
+                <label htmlFor="zotero-key-select">Zotero API Key</label>
               </div>
-              <input
-                id="zotero-api-key-input"
+              <select
+                id="zotero-key-select"
                 className="lemma-project-create-input"
                 aria-label="Zotero API Key"
-                type="password"
-                value={apiKey}
-                onChange={(e) => setApiKey(e.target.value)}
-                placeholder={
-                  status?.has_credentials
-                    ? "Saved key stays if this is left blank"
-                    : "Paste your Zotero private key"
-                }
-                autoFocus
-              />
+                value={selectedKeyName}
+                onChange={(e) => setSelectedKeyName(e.target.value)}
+              >
+                {zoteroKeys.length === 0 ? (
+                  <option value="">
+                    {status?.has_credentials
+                      ? "Saved Zotero key"
+                      : "No Zotero keys configured in Settings"}
+                  </option>
+                ) : (
+                  <>
+                    <option value="">Select a Zotero key</option>
+                    {zoteroKeys.map((k) => (
+                      <option key={k.name} value={k.name}>
+                        {k.name}
+                      </option>
+                    ))}
+                  </>
+                )}
+              </select>
             </div>
 
             <div className="lemma-zotero-split">

@@ -99,6 +99,13 @@ function mockFetch(
         json: () => Promise.resolve(body),
       });
     }
+    if (String(url) === "/api/settings/keys" && method === "GET") {
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({ github: [], zotero: [] }),
+      });
+    }
     if (String(url).startsWith("/api/settings/models/catalog") && method === "GET") {
       return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(catalog) });
     }
@@ -495,6 +502,79 @@ describe("ModelsSettingsView", () => {
             JSON.parse(c[1].body).model === "b/model"
         )
       ).toBe(true);
+    });
+  });
+
+  it("adds and removes named GitHub and Zotero keys", async () => {
+    const keysState = { github: [] as Array<{ name: string }>, zotero: [] as Array<{ name: string }> };
+    const fetchMock = vi.fn().mockImplementation((url: string, options?: any) => {
+      const method = options?.method ?? "GET";
+      if (String(url) === "/api/settings/keys" && method === "GET") {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve(keysState),
+        });
+      }
+      if (String(url) === "/api/settings/keys" && method === "POST") {
+        const body = JSON.parse(options.body);
+        if (body.provider === "github") {
+          keysState.github = [...keysState.github, { name: body.name }];
+        } else {
+          keysState.zotero = [...keysState.zotero, { name: body.name }];
+        }
+        return Promise.resolve({
+          ok: true,
+          status: 201,
+          json: () => Promise.resolve(keysState),
+        });
+      }
+      if (String(url).startsWith("/api/settings/keys/") && method === "DELETE") {
+        const parts = String(url).split("/");
+        const name = decodeURIComponent(parts[parts.length - 1]);
+        const provider = parts[parts.length - 2];
+        if (provider === "github") {
+          keysState.github = keysState.github.filter((k) => k.name !== name);
+        } else {
+          keysState.zotero = keysState.zotero.filter((k) => k.name !== name);
+        }
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve(keysState),
+        });
+      }
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({ models: [], catalog_available: true }),
+      });
+    });
+    global.fetch = fetchMock;
+
+    renderView([makeModel("a/model")]);
+
+    fireEvent.change(screen.getByLabelText("Key type"), { target: { value: "github" } });
+    fireEvent.change(screen.getByLabelText("Key name"), { target: { value: "Personal GitHub" } });
+    fireEvent.change(screen.getByLabelText("Key value"), { target: { value: "ghp_secret12345" } });
+    fireEvent.click(screen.getByLabelText("Add Key"));
+
+    await waitFor(() => {
+      expect(Boolean(screen.getByTestId("saved-key-github-Personal GitHub"))).toBe(true);
+    });
+
+    fireEvent.change(screen.getByLabelText("Key type"), { target: { value: "zotero" } });
+    fireEvent.change(screen.getByLabelText("Key name"), { target: { value: "Lab Zotero" } });
+    fireEvent.change(screen.getByLabelText("Key value"), { target: { value: "zot_secret_key" } });
+    fireEvent.click(screen.getByLabelText("Add Key"));
+
+    await waitFor(() => {
+      expect(Boolean(screen.getByTestId("saved-key-zotero-Lab Zotero"))).toBe(true);
+    });
+
+    fireEvent.click(screen.getByLabelText("Remove GitHub key Personal GitHub"));
+    await waitFor(() => {
+      expect(screen.queryByTestId("saved-key-github-Personal GitHub")).toBeNull();
     });
   });
 });
