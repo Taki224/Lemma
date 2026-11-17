@@ -36,6 +36,8 @@ export interface AuthStatusResponse {
   csrf_token: string | null;
   insecure_http_warning: boolean;
   privacy_consent_accepted: boolean;
+  has_openrouter_key?: boolean;
+  secrets?: { has_openrouter_key?: boolean };
 }
 
 export function App(): React.ReactElement {
@@ -44,6 +46,7 @@ export function App(): React.ReactElement {
   const [csrfToken, setCsrfToken] = useState<string | null>(null);
   const [insecureHttpWarning, setInsecureHttpWarning] = useState<boolean>(false);
   const [privacyConsentAccepted, setPrivacyConsentAccepted] = useState<boolean>(false);
+  const [hasOpenRouterKey, setHasOpenRouterKey] = useState<boolean>(false);
   const [password, setPassword] = useState<string>("");
   const [loginError, setLoginError] = useState<string | null>(null);
   const [workspaceMode, setWorkspaceMode] = useState<"editor" | "review_studio" | "history" | "settings">("editor");
@@ -200,6 +203,9 @@ export function App(): React.ReactElement {
         }
         setInsecureHttpWarning(Boolean(data.insecure_http_warning));
         setPrivacyConsentAccepted(Boolean(data.privacy_consent_accepted));
+        setHasOpenRouterKey(
+          Boolean(data.has_openrouter_key ?? data.secrets?.has_openrouter_key)
+        );
         setLoading(false);
       })
       .catch(() => {
@@ -997,6 +1003,7 @@ export function App(): React.ReactElement {
     workspaceMode === "settings" ? (
       <ModelsSettingsView
         csrfToken={csrfToken || (typeof localStorage !== "undefined" ? localStorage.getItem("lemma_csrf_token") || "" : "")}
+        hasOpenRouterKey={hasOpenRouterKey}
         onClose={() => setWorkspaceMode("editor")}
       />
     ) : workspaceMode === "review_studio" ? (
@@ -1532,6 +1539,7 @@ export function App(): React.ReactElement {
                     dirtyBuffers={dirtyBuffers}
                     onUploadFile={uploadProjectFile}
                     agentRun={agentRun}
+                    hasOpenRouterKey={hasOpenRouterKey}
                   />
                 </div>
               )}

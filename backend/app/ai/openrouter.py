@@ -63,6 +63,25 @@ class CompletionResult:
     finish_reason: str | None = None
 
 
+@dataclass(frozen=True)
+class ApplyPatchOperation:
+    call_id: str
+    op_type: str
+    path: str
+    diff: str
+
+
+@dataclass(frozen=True)
+class ApplyPatchResult:
+    content: str
+    operations: list[ApplyPatchOperation]
+    model: str
+    prompt_tokens: int
+    completion_tokens: int
+    cost_usd: float
+    finish_reason: str | None = None
+
+
 DEFAULT_FALLBACK_MODELS: list[OpenRouterModel] = [
     OpenRouterModel(
         id="anthropic/claude-3.7-sonnet",
@@ -523,6 +542,113 @@ class OpenRouterClient:
             self.release_spend(reservation_id)
             raise
 
+    async def apply_patch(
+        self,
+        model: str,
+        messages: list[dict[str, Any]],
+        max_tokens: int = 4096,
+    ) -> ApplyPatchResult:
+        """Ask the Responses API for an apply_patch tool call. Does not write files."""
+        enabled_model = self.registry.get_model(model)
+        is_local = enabled_model is not None and enabled_model.provider == "local"
+        if is_local:
+            raise OpenRouterError("Apply patch is only available for OpenRouter models.")
+        if not self.settings.privacy_consent_accepted:
+            raise PrivacyConsentRequiredError(
+                "Manuscript privacy consent must be accepted before calling OpenRouter models."
+            )
+        if enabled_model is None:
+            raise ModelNotAllowedError(
+                f"Model {model!r} is not enabled. Enable it in Settings > Models."
+            )
+
+        bounded_max_tokens = max(1, min(int(max_tokens), 32768))
+        est_prompt_tokens = _estimate_prompt_tokens(messages)
+        estimated_usd = self.estimate_cost_usd(
+            model=model,
+            prompt_tokens=est_prompt_tokens,
+            completion_tokens=bounded_max_tokens,
+        )
+        reservation_id = self.reserve_spend(model=model, estimated_usd=estimated_usd)
+        try:
+            instructions, input_items = _messages_to_responses_input(messages)
+            payload: dict[str, Any] = {
+                "model": model,
+                "instructions": instructions,
+                "input": input_items,
+                "max_output_tokens": bounded_max_tokens,
+                # HITL returns one complete apply_patch_call. Native streaming
+                # is OpenAI-only and this client does not consume diff deltas.
+                "tools": [
+                    {
+                        "type": "openrouter:apply_patch",
+                        "parameters": {"engine": "openrouter"},
+                    }
+                ],
+            }
+            if getattr(self.settings, "zdr_enabled", True):
+                payload["provider"] = {"data_collection": "deny", "zdr": True}
+
+            api_key = self.secrets.get("openrouter_api_key")
+            headers: dict[str, str] = {"Content-Type": "application/json"}
+            if api_key:
+                headers["Authorization"] = f"Bearer {api_key}"
+            elif self._http_client is None:
+                raise OpenRouterError(
+                    "OpenRouter API key is not configured in /data/config/secrets.yaml."
+                )
+
+            try:
+                if self._http_client is not None:
+                    resp = await self._http_client.post(
+                        "/responses", json=payload, headers=headers
+                    )
+                else:
+                    async with httpx.AsyncClient(
+                        base_url=OPENROUTER_BASE_URL, timeout=120.0
+                    ) as client:
+                        resp = await client.post("/responses", json=payload, headers=headers)
+            except httpx.HTTPError as exc:
+                raise OpenRouterError(f"OpenRouter request failed: {exc}") from exc
+
+            if resp.status_code >= 400:
+                raise OpenRouterError(
+                    f"OpenRouter responses failed with status {resp.status_code}: {resp.text}"
+                )
+            try:
+                data = resp.json()
+            except ValueError as exc:
+                raise OpenRouterError("OpenRouter returned invalid JSON.") from exc
+            if not isinstance(data, dict):
+                raise OpenRouterError("OpenRouter returned an unexpected responses payload.")
+            if data.get("error") and not data.get("output"):
+                raise OpenRouterError(f"OpenRouter responses failed: {data.get('error')}")
+
+            content_text, operations, actual_prompt, actual_completion, usage, finish_reason = (
+                _parse_responses_payload(data, est_prompt_tokens)
+            )
+            if "cost" in usage or "total_cost" in usage:
+                actual_usd = float(usage.get("cost") or usage.get("total_cost") or 0.0)
+            else:
+                actual_usd = self.estimate_cost_usd(
+                    model=model,
+                    prompt_tokens=actual_prompt,
+                    completion_tokens=actual_completion,
+                )
+            self.reconcile_spend(reservation_id, actual_usd)
+            return ApplyPatchResult(
+                content=content_text,
+                operations=operations,
+                model=model,
+                prompt_tokens=actual_prompt,
+                completion_tokens=actual_completion,
+                cost_usd=actual_usd,
+                finish_reason=finish_reason,
+            )
+        except BaseException:
+            self.release_spend(reservation_id)
+            raise
+
     async def _complete_local(
         self,
         *,
@@ -684,3 +810,86 @@ def _parse_completion_payload(
         usage.get("completion_tokens") or max(1, len(content_text) // 4)
     )
     return content_text, actual_prompt, actual_completion, usage, finish_reason
+
+
+def _messages_to_responses_input(
+    messages: list[dict[str, Any]],
+) -> tuple[str, list[dict[str, str]]]:
+    instructions: list[str] = []
+    items: list[dict[str, str]] = []
+    for message in messages:
+        role = str(message.get("role") or "user")
+        content = message.get("content")
+        text = content if isinstance(content, str) else str(content or "")
+        if role == "system":
+            if text:
+                instructions.append(text)
+            continue
+        if role not in {"user", "assistant"}:
+            role = "user"
+        items.append({"role": role, "content": text})
+    return "\n\n".join(instructions), items
+
+
+def _response_text_parts(item: dict[str, Any]) -> list[str]:
+    content = item.get("content")
+    if isinstance(content, str):
+        return [content] if content else []
+    parts: list[str] = []
+    if isinstance(content, list):
+        for part in content:
+            if isinstance(part, str):
+                if part:
+                    parts.append(part)
+                continue
+            if not isinstance(part, dict):
+                continue
+            text = part.get("text") or part.get("output_text") or ""
+            if isinstance(text, str) and text:
+                parts.append(text)
+    return parts
+
+
+def _parse_responses_payload(
+    data: dict[str, Any], est_prompt_tokens: int
+) -> tuple[str, list[ApplyPatchOperation], int, int, dict[str, Any], str | None]:
+    texts: list[str] = []
+    operations: list[ApplyPatchOperation] = []
+    output = data.get("output")
+    if isinstance(output, list):
+        for item in output:
+            if not isinstance(item, dict):
+                continue
+            item_type = str(item.get("type") or "")
+            if item_type in {"message", "output_message"}:
+                texts.extend(_response_text_parts(item))
+                continue
+            if item_type != "apply_patch_call":
+                continue
+            operation = item.get("operation")
+            if not isinstance(operation, dict):
+                continue
+            operations.append(
+                ApplyPatchOperation(
+                    call_id=str(item.get("call_id") or ""),
+                    op_type=str(operation.get("type") or ""),
+                    path=str(operation.get("path") or ""),
+                    diff=str(operation.get("diff") or ""),
+                )
+            )
+    if not texts and isinstance(data.get("output_text"), str):
+        texts.append(data["output_text"])
+
+    usage = data.get("usage") or {}
+    if not isinstance(usage, dict):
+        usage = {}
+    content_text = "\n".join(part for part in texts if part).strip()
+    actual_prompt = int(usage.get("input_tokens") or usage.get("prompt_tokens") or est_prompt_tokens)
+    actual_completion = int(
+        usage.get("output_tokens")
+        or usage.get("completion_tokens")
+        or max(1, len(content_text) // 4)
+    )
+    status = data.get("status")
+    finish_reason = status.strip().lower() if isinstance(status, str) and status.strip() else None
+    return content_text, operations, actual_prompt, actual_completion, usage, finish_reason

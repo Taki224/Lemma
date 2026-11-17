@@ -197,6 +197,7 @@ test("test_settings_button_opens_models_view_and_enabled_model_appears_in_chat_b
           csrf_token: "csrf-abc",
           insecure_http_warning: false,
           privacy_consent_accepted: true,
+          has_openrouter_key: true,
         }),
       };
     }

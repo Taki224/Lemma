@@ -29,6 +29,7 @@ def _setup_services(
     tmp_path: Path,
     mock_response_text: str,
     captured: list[dict] | None = None,
+    responder=None,
 ):
     settings = bootstrap_data_dir(tmp_path / "data")
     settings.privacy_consent_accepted = True
@@ -41,6 +42,8 @@ def _setup_services(
     project_service = ProjectService(data_dir=settings.data_dir, db=db)
 
     def handler(request: httpx.Request) -> httpx.Response:
+        if responder is not None:
+            return responder(request)
         if captured is not None:
             captured.append(json.loads(request.content.decode()))
         return httpx.Response(
@@ -2897,5 +2900,234 @@ async def test_run_agent_turn_external_searches_have_separate_capped_budget(
         assert "Read budget: 0 of 4" in captured[-2]["messages"][-1]["content"]
         statuses = [e["content"] for e in events if e["type"] == "status"]
         assert statuses[-1] == "Reached search limit; preparing answer."
+    finally:
+        await http_client.aclose()
+
+
+def _patch_response(diff: str, path: str = "main.tex", text: str = "Updated the line.") -> dict:
+    return {
+        "status": "completed",
+        "output": [
+            {
+                "type": "message",
+                "role": "assistant",
+                "content": [{"type": "output_text", "text": text}],
+            },
+            {
+                "type": "apply_patch_call",
+                "call_id": "call_1",
+                "status": "completed",
+                "operation": {"type": "update_file", "path": path, "diff": diff},
+            },
+        ],
+        "usage": {"input_tokens": 12, "output_tokens": 8, "cost": 0.001},
+    }
+
+
+def _routed_responder(captured: list[dict], *, responses_payload: dict | None, responses_status: int, chat_text: str):
+    def responder(request: httpx.Request) -> httpx.Response:
+        captured.append(
+            {
+                "path": request.url.path,
+                "body": json.loads(request.content.decode() or "{}"),
+            }
+        )
+        if request.url.path.endswith("/responses"):
+            if responses_status != 200:
+                return httpx.Response(responses_status, text="responses unavailable")
+            return httpx.Response(200, json=responses_payload or {})
+        return httpx.Response(
+            200,
+            json={
+                "choices": [{"message": {"content": chat_text}, "finish_reason": "stop"}],
+                "usage": {"prompt_tokens": 10, "completion_tokens": 5},
+            },
+        )
+
+    return responder
+
+
+@pytest.mark.asyncio
+async def test_full_file_edit_uses_apply_patch_when_enabled(tmp_path: Path) -> None:
+    captured: list[dict] = []
+    diff = "@@ alpha\n beta\n-omega\n+omega!\n"
+    _, _, project_service, chat_service, http_client = _setup_services(
+        tmp_path,
+        "",
+        responder=_routed_responder(
+            captured,
+            responses_payload=_patch_response(diff),
+            responses_status=200,
+            chat_text="",
+        ),
+    )
+    try:
+        chat_service.settings.apply_patch_enabled = True
+        meta = project_service.create_project("Patch")
+        source = "alpha\nbeta\nomega\n"
+        project_service.write_file(
+            project_id=meta.project_id,
+            rel_path="main.tex",
+            content=source,
+            expected_etag=None,
+        )
+        chat = chat_service.create_chat(meta.project_id, title="Patch")
+        turn = await chat_service.send_message(
+            project_id=meta.project_id,
+            chat_id=chat.chat_id,
+            user_prompt="Change the last line.",
+            model="anthropic/claude-3.7-sonnet",
+            profile_id="writing",
+            active_file="main.tex",
+        )
+        assert captured[0]["path"].endswith("/responses")
+        tool = captured[0]["body"]["tools"][0]
+        assert tool == {
+            "type": "openrouter:apply_patch",
+            "parameters": {"engine": "openrouter"},
+        }
+        assert "apply_patch" in captured[0]["body"]["instructions"]
+        assert "<<<<<<< SEARCH" not in captured[0]["body"]["instructions"]
+        assert "`main.tex`" in captured[0]["body"]["instructions"]
+        assert len(turn.hunks) == 1
+        assert turn.hunks[0].original_text == "omega"
+        assert turn.hunks[0].replacement_text == "omega!"
+        assert turn.hunks[0].start_line == 3
+        assert "Updated the line." in turn.reply
+        assert project_service.read_file(meta.project_id, "main.tex").text == source
+    finally:
+        await http_client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_apply_patch_stays_off_for_a_selection_and_when_disabled(tmp_path: Path) -> None:
+    captured: list[dict] = []
+    reply = "<<<<<<< SEARCH\nomega\n=======\nomega!\n>>>>>>> REPLACE\n"
+    _, _, project_service, chat_service, http_client = _setup_services(
+        tmp_path,
+        "",
+        responder=_routed_responder(
+            captured,
+            responses_payload=_patch_response("@@\n-omega\n+nope\n"),
+            responses_status=200,
+            chat_text=reply,
+        ),
+    )
+    try:
+        chat_service.settings.apply_patch_enabled = True
+        meta = project_service.create_project("Selection")
+        source = "alpha\nomega\n"
+        project_service.write_file(
+            project_id=meta.project_id,
+            rel_path="main.tex",
+            content=source,
+            expected_etag=None,
+        )
+        chat = chat_service.create_chat(meta.project_id, title="Selection")
+        turn = await chat_service.send_message(
+            project_id=meta.project_id,
+            chat_id=chat.chat_id,
+            user_prompt="Change the selection.",
+            model="anthropic/claude-3.7-sonnet",
+            profile_id="writing",
+            active_file="main.tex",
+            selection={"text": "omega", "start_line": 2, "end_line": 2},
+        )
+        assert captured[0]["path"].endswith("/chat/completions")
+        assert turn.hunks[0].replacement_text == "omega!"
+
+        captured.clear()
+        chat_service.settings.apply_patch_enabled = False
+        whole = await chat_service.send_message(
+            project_id=meta.project_id,
+            chat_id=chat.chat_id,
+            user_prompt="Change the last line.",
+            model="anthropic/claude-3.7-sonnet",
+            profile_id="writing",
+            active_file="main.tex",
+        )
+        assert captured[0]["path"].endswith("/chat/completions")
+        assert whole.hunks[0].replacement_text == "omega!"
+    finally:
+        await http_client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_apply_patch_falls_back_when_the_responses_call_fails(tmp_path: Path) -> None:
+    captured: list[dict] = []
+    reply = "<<<<<<< SEARCH\nomega\n=======\nomega!\n>>>>>>> REPLACE\n"
+    _, _, project_service, chat_service, http_client = _setup_services(
+        tmp_path,
+        "",
+        responder=_routed_responder(
+            captured,
+            responses_payload=None,
+            responses_status=400,
+            chat_text=reply,
+        ),
+    )
+    try:
+        chat_service.settings.apply_patch_enabled = True
+        meta = project_service.create_project("Fallback")
+        project_service.write_file(
+            project_id=meta.project_id,
+            rel_path="main.tex",
+            content="alpha\nomega\n",
+            expected_etag=None,
+        )
+        chat = chat_service.create_chat(meta.project_id, title="Fallback")
+        turn = await chat_service.send_message(
+            project_id=meta.project_id,
+            chat_id=chat.chat_id,
+            user_prompt="Change the last line.",
+            model="anthropic/claude-3.7-sonnet",
+            profile_id="writing",
+            active_file="main.tex",
+        )
+        assert [item["path"] for item in captured] == [
+            "/api/v1/responses",
+            "/api/v1/chat/completions",
+        ]
+        assert turn.hunks[0].replacement_text == "omega!"
+    finally:
+        await http_client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_apply_patch_discards_a_diff_that_does_not_match(tmp_path: Path) -> None:
+    captured: list[dict] = []
+    _, _, project_service, chat_service, http_client = _setup_services(
+        tmp_path,
+        "",
+        responder=_routed_responder(
+            captured,
+            responses_payload=_patch_response("@@ missing\n-nope\n+omega!\n", text="Tried."),
+            responses_status=200,
+            chat_text="should not be used",
+        ),
+    )
+    try:
+        chat_service.settings.apply_patch_enabled = True
+        meta = project_service.create_project("Mismatch")
+        source = "alpha\nomega\n"
+        project_service.write_file(
+            project_id=meta.project_id,
+            rel_path="main.tex",
+            content=source,
+            expected_etag=None,
+        )
+        chat = chat_service.create_chat(meta.project_id, title="Mismatch")
+        turn = await chat_service.send_message(
+            project_id=meta.project_id,
+            chat_id=chat.chat_id,
+            user_prompt="Change the last line.",
+            model="anthropic/claude-3.7-sonnet",
+            profile_id="writing",
+            active_file="main.tex",
+        )
+        assert len(captured) == 1
+        assert turn.hunks == []
+        assert "could not be applied" in turn.reply
+        assert project_service.read_file(meta.project_id, "main.tex").text == source
     finally:
         await http_client.aclose()

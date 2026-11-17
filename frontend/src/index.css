@@ -2620,6 +2620,15 @@ dialog.lemma-github-dialog {
   box-shadow: var(--shadow-glow);
 }
 
+.lemma-chat-model select:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.lemma-chat-model select:disabled:hover {
+  background: transparent;
+}
+
 .lemma-chat-header-actions {
   display: flex;
   align-items: center;
@@ -4962,6 +4971,14 @@ textarea.lemma-chat-prompt-input {
 
 .lemma-smart-routing-row select:disabled {
   opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.lemma-control-disabled {
+  opacity: 0.55;
+}
+
+.lemma-control-disabled .lemma-checkbox-label {
   cursor: not-allowed;
 }
 
