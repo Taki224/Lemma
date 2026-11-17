@@ -665,3 +665,14 @@ def test_chat_naming_get_put_and_validation(tmp_path: Path) -> None:
 
         reloaded = client.get("/api/settings/chat-naming")
         assert reloaded.json() == {"enabled": True, "model": "openai/gpt-4o"}
+
+
+def test_web_search_setting_round_trip(tmp_path: Path) -> None:
+    app = _make_app(tmp_path)
+    with TestClient(app) as client:
+        headers = _login(client)
+        assert client.get("/api/settings/web-search").json() == {"enabled": False}
+        ok = client.put("/api/settings/web-search", json={"enabled": True}, headers=headers)
+        assert ok.status_code == 200
+        assert ok.json() == {"enabled": True}
+        assert client.get("/api/settings/web-search").json() == {"enabled": True}

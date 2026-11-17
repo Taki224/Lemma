@@ -60,6 +60,7 @@ class AppSettings(BaseModel):
     smart_routing_model: str = Field(default="")
     chat_naming_enabled: bool = Field(default=False)
     chat_naming_model: str = Field(default="")
+    web_search_enabled: bool = Field(default=False)
     local_model_base_url: str = Field(default="http://localhost:11434/v1")
 
     @property
@@ -123,6 +124,7 @@ class AppSettings(BaseModel):
             "smart_routing_model": self.smart_routing_model,
             "chat_naming_enabled": self.chat_naming_enabled,
             "chat_naming_model": self.chat_naming_model,
+            "web_search_enabled": self.web_search_enabled,
             "local_model_base_url": self.local_model_base_url,
         }
         return data
@@ -158,6 +160,7 @@ def _apply_env_overrides(merged: dict[str, Any]) -> None:
         "ZDR_ENABLED": "zdr_enabled",
         "SMART_ROUTING_ENABLED": "smart_routing_enabled",
         "CHAT_NAMING_ENABLED": "chat_naming_enabled",
+        "WEB_SEARCH_ENABLED": "web_search_enabled",
     }
 
     for env_key, field_name in str_mappings.items():
