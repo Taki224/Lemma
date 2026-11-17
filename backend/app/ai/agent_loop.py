@@ -6,14 +6,22 @@ from dataclasses import dataclass
 from typing import Any, Literal
 
 from app.ai.manuscript_context import ManuscriptContext
-from app.ai.output_contracts import AGENT_STEP_CONTRACT, compose_system_prompt
+from app.ai.output_contracts import (
+    AGENT_STEP_CONTRACT,
+    AGENT_STEP_LITERATURE_CONTRACT,
+    AGENT_STEP_WEB_CONTRACT,
+    compose_system_prompt,
+)
 from app.ai.prompts import PromptProfile
 from app.ai.reference_context import ReferenceContext
 
 MAX_AGENT_READS = 4
+MAX_EXTERNAL_SEARCHES = 3
 STEP_MAX_TOKENS = 1024
 STEP_EXTRA_BODY: dict[str, Any] = {"reasoning": {"effort": "minimal"}}
 MAX_STATUS_CHARS = 160
+LITERATURE_STATUS = "Searching the literature…"
+WEB_STATUS = "Searching the web…"
 
 _FENCE_RE = re.compile(r"^```(?:json)?\s*|\s*```$", re.IGNORECASE)
 
@@ -23,7 +31,7 @@ class AgentStepDecision:
     """Structured decision returned by one planning/read step of the agent loop."""
 
     status: str
-    action: Literal["search", "read", "answer"]
+    action: Literal["search", "read", "answer", "find_papers", "web_search"]
     path: str | None = None
     query: str = ""
     focus: str = ""
@@ -117,6 +125,14 @@ def parse_agent_step_decision(
             query=query,
         )
 
+    if action_str in {"find_papers", "web_search"}:
+        raw_query = data.get("query")
+        query = raw_query.strip() if isinstance(raw_query, str) else ""
+        if not query:
+            return AgentStepDecision(status=status, action="answer")
+        fixed_status = LITERATURE_STATUS if action_str == "find_papers" else WEB_STATUS
+        return AgentStepDecision(status=fixed_status, action=action_str, query=query)  # type: ignore[arg-type]
+
     if action_str != "read":
         return AgentStepDecision(status=status, action="answer")
 
@@ -156,9 +172,18 @@ def build_step_messages(
     reads_used: int = 0,
     max_reads: int = MAX_AGENT_READS,
     user_prompt: str,
+    literature_search_enabled: bool = False,
+    web_search_enabled: bool = False,
+    searches_used: int = 0,
+    max_searches: int = MAX_EXTERNAL_SEARCHES,
 ) -> list[dict[str, str]]:
     """Build chat messages for one planning/read step without mutating chat history."""
-    system_content = compose_system_prompt(profile.system_prompt, AGENT_STEP_CONTRACT)
+    contract = AGENT_STEP_CONTRACT
+    if literature_search_enabled:
+        contract += "\n" + AGENT_STEP_LITERATURE_CONTRACT
+    if web_search_enabled:
+        contract += "\n" + AGENT_STEP_WEB_CONTRACT
+    system_content = compose_system_prompt(profile.system_prompt, contract)
 
     parts: list[str] = []
     if context.mode == "index":
@@ -190,6 +215,12 @@ def build_step_messages(
     parts.append(
         f"Read budget: {reads_used} of {max_reads} reads used ({remaining} remaining)."
     )
+    if literature_search_enabled or web_search_enabled:
+        searches_remaining = max(0, max_searches - searches_used)
+        parts.append(
+            f"External search budget (find_papers and web_search, separate from reads): "
+            f"{searches_used} of {max_searches} used ({searches_remaining} remaining)."
+        )
     parts.append(f"User request:\n{user_prompt}")
 
     return [

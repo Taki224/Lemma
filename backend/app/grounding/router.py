@@ -18,7 +18,12 @@ from app.grounding.overlap_checker import (
     extract_claim_evidence,
 )
 from app.grounding.pdf_indexer import IndexedPdfChunk, PdfIndexer
-from app.grounding.scholarly_client import ScholarlyClient, ScholarlyWork
+from app.grounding.scholarly_client import (
+    ScholarlyClient,
+    ScholarlyWork,
+    build_default_bibtex,
+    derive_cite_key,
+)
 from app.projects.service import ProjectService
 from app.zotero.staging_repo import CandidateStagingRepository
 
@@ -37,40 +42,6 @@ class IndexPdfPayload(BaseModel):
 class VerifyDraftPayload(BaseModel):
     draft_text: str
     file_path: str | None = None
-
-
-def _derive_cite_key(work: ScholarlyWork | dict[str, Any]) -> str:
-    authors = work.authors if isinstance(work, ScholarlyWork) else work.get("authors", [])
-    year = work.year if isinstance(work, ScholarlyWork) else work.get("year")
-    author_str = "ref"
-    if authors:
-        first = str(authors[0]).strip()
-        if "," in first:
-            author_str = first.split(",")[0].strip()
-        else:
-            author_str = first.split()[-1].strip()
-    clean_author = "".join(ch for ch in author_str if ch.isalnum()).lower() or "ref"
-    year_str = str(year) if year else "2024"
-    return f"{clean_author}{year_str}"
-
-
-def _build_default_bibtex(cite_key: str, work: ScholarlyWork | dict[str, Any]) -> str:
-    title = work.title if isinstance(work, ScholarlyWork) else work.get("title", "")
-    authors = work.authors if isinstance(work, ScholarlyWork) else work.get("authors", [])
-    year = work.year if isinstance(work, ScholarlyWork) else work.get("year")
-    doi = work.doi if isinstance(work, ScholarlyWork) else work.get("doi")
-    authors_str = " and ".join(authors) if authors else "Unknown"
-    lines = [
-        f"@article{{{cite_key},",
-        f"  title = {{{title}}},",
-        f"  author = {{{authors_str}}},",
-    ]
-    if year:
-        lines.append(f"  year = {{{year}}},")
-    if doi:
-        lines.append(f"  doi = {{{doi}}},")
-    lines.append("}")
-    return "\n".join(lines)
 
 
 @grounding_router.get("/api/projects/{project_id}/grounding/search")
@@ -133,8 +104,8 @@ async def stage_scholarly_work(
         injection_flagged=bool(raw_work.get("injection_flagged", False)),
     )
 
-    base_cite_key = _derive_cite_key(work)
-    bibtex = _build_default_bibtex(base_cite_key, work)
+    base_cite_key = derive_cite_key(work)
+    bibtex = build_default_bibtex(base_cite_key, work)
 
     # Load existing bib entries to disambiguate keys if needed
     existing_bib_entries = {}

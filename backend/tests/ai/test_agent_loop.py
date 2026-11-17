@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 from app.ai.agent_loop import (
     MAX_AGENT_READS,
     MAX_STATUS_CHARS,
@@ -236,3 +238,28 @@ def test_build_step_messages_index_mode_and_search_working_notes() -> None:
     assert content.index("Project index") < content.index("Read-only root preamble") < content.index("Reference block")
     assert "Search for 'ablation':" in content
     assert "sections/methods.tex:42: \\subsection{Ablation}" in content
+
+
+def test_parse_agent_step_decision_find_papers_and_web_search_use_fixed_status() -> None:
+    papers = parse_agent_step_decision(
+        json.dumps({"status": "model words", "action": "find_papers", "query": "attention"}),
+        is_initial=True,
+        active_file="main.tex",
+    )
+    assert (papers.action, papers.query) == ("find_papers", "attention")
+    assert papers.status == "Searching the literature…"
+
+    web = parse_agent_step_decision(
+        json.dumps({"status": "model words", "action": "web_search", "query": "tikz docs"}),
+        is_initial=True,
+        active_file="main.tex",
+    )
+    assert (web.action, web.query) == ("web_search", "tikz docs")
+    assert web.status == "Searching the web…"
+
+    empty = parse_agent_step_decision(
+        json.dumps({"status": "x", "action": "web_search", "query": " "}),
+        is_initial=True,
+        active_file="",
+    )
+    assert empty.action == "answer"

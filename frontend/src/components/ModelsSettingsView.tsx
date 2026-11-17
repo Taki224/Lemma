@@ -46,6 +46,9 @@ export function ModelsSettingsView({
   const [localManualVision, setLocalManualVision] = useState<boolean>(false);
   const smartSaveSeq = useRef(0);
   const namingSaveSeq = useRef(0);
+  const [webSearchEnabled, setWebSearchEnabled] = useState<boolean>(false);
+  const [webSearchLoaded, setWebSearchLoaded] = useState<boolean>(false);
+  const webSearchSaveSeq = useRef(0);
 
   useEffect(() => {
     let active = true;
@@ -141,6 +144,63 @@ export function ModelsSettingsView({
       controller.abort();
     };
   }, []);
+
+  useEffect(() => {
+    let active = true;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), SMART_ROUTING_TIMEOUT_MS);
+    fetch("/api/settings/web-search", { signal: controller.signal })
+      .then((res) => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return res.json();
+      })
+      .then((data: { enabled?: boolean }) => {
+        if (!active) return;
+        setWebSearchEnabled(Boolean(data.enabled));
+        setWebSearchLoaded(true);
+      })
+      .catch(() => {
+        if (!active) return;
+        setWebSearchLoaded(true);
+      });
+    return () => {
+      active = false;
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, []);
+
+  const persistWebSearch = async (enabled: boolean) => {
+    const seq = ++webSearchSaveSeq.current;
+    const previous = webSearchEnabled;
+    setWebSearchEnabled(enabled);
+    setErrorMessage(null);
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), SMART_ROUTING_TIMEOUT_MS);
+    try {
+      const res = await fetch("/api/settings/web-search", {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          "X-CSRF-Token": csrfToken,
+        },
+        body: JSON.stringify({ enabled }),
+        signal: controller.signal,
+      });
+      if (seq !== webSearchSaveSeq.current) return;
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        setWebSearchEnabled(previous);
+        setErrorMessage(err.detail || `Request failed (HTTP ${res.status})`);
+      }
+    } catch (err: unknown) {
+      if (seq !== webSearchSaveSeq.current) return;
+      setWebSearchEnabled(previous);
+      setErrorMessage(err instanceof Error ? err.message : "Request failed");
+    } finally {
+      clearTimeout(timer);
+    }
+  };
 
   const persistSmartRouting = async (enabled: boolean, modelId: string) => {
     const seq = ++smartSaveSeq.current;
@@ -390,6 +450,28 @@ export function ModelsSettingsView({
               </>
             )}
           </select>
+        </div>
+      </section>
+
+      <section className="lemma-settings-card" data-testid="web-search-section">
+        <h3>Web search</h3>
+        <p className="lemma-subtext">
+          When this is on, the AI assistant can search the web through OpenRouter for outside facts.
+          Only a short search query is sent for the search, not your manuscript. Web searches add
+          OpenRouter usage costs.
+        </p>
+        <div className="lemma-smart-routing-row">
+          <label className="lemma-checkbox-label">
+            <input
+              type="checkbox"
+              checked={webSearchEnabled}
+              disabled={!webSearchLoaded}
+              onChange={(e) => {
+                void persistWebSearch(e.target.checked);
+              }}
+            />
+            <span>Allow the AI assistant to search the web</span>
+          </label>
         </div>
       </section>
 

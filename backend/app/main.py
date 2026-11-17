@@ -258,6 +258,8 @@ def create_app(
             settings=active_settings,
             grounding_hook=_grounding_hook,
             project_index_store=project_index_store,
+            scholarly_client=scholarly_client,
+            staging_repo=staging_repo,
         )
         app.state.chat_run_manager = ChatRunManager()
         app.state.text_review_orchestrator = TextReviewOrchestrator(
