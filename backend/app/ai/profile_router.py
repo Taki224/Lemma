@@ -13,6 +13,7 @@ ChatProfileId = Literal[
     "formal_tone",
     "explain_math",
     "explain",
+    "fix_latex",
 ]
 
 AUTO_PROFILE_ID = "auto"
@@ -106,12 +107,34 @@ _EXPLAIN: tuple[re.Pattern[str], ...] = tuple(
     )
 )
 
+_FIX_LATEX: tuple[re.Pattern[str], ...] = tuple(
+    re.compile(pattern, re.IGNORECASE | re.MULTILINE)
+    for pattern in (
+        r"\b(?:latex|tex|compil(?:e|ation)|build|pdflatex|xelatex|lualatex|bibtex|biber)\s+"
+        r"(?:error|errors|warning|warnings|issue|issues|failure|failures)\b",
+        r"\b(?:fix|resolve|debug|diagnose|troubleshoot|solve|investigate)\b(?:\s+\w+){0,5}\s+"
+        r"(?:latex|tex|compil(?:e|ing|ation)|build(?:ing)?|pdflatex|xelatex|lualatex|bibtex|biber)\b",
+        r"\b(?:fail(?:s|ed|ing)?\s+to|won't|will\s+not|does\s+not|doesn't|can't|cannot)\b(?:\s+\w+){0,4}\s+compile\b",
+        r"\bundefined\s+control\s+sequence\b",
+        r"\bmissing\s+(?:\$|\\begin|\\end|package|file)\b",
+        r"\b(?:overfull|underfull)\s+\\?[hv]box\b",
+        r"\b(?:emergency\s+stop|fatal\s+error\s+occurred|runaway\s+argument)\b",
+        r"\b(?:reference|citation)\s+[`'\"]?[^\s`'\"]+[`'\"]?\s+(?:on\s+page\s+\d+\s+)?undefined\b",
+        r"\benvironment\s+\S+\s+undefined\b",
+        r"\bpackage\s+\S+\s+error\b",
+        r"^!\s*latex\s+error\b",
+        r"^\[(?:error|warning)\]\s+\S+:(?:\d+|\?)",
+        r"^Log context:",
+    )
+)
+
 
 def route_chat_profile(prompt: str, *, has_selection: bool = False) -> ChatProfileId:
     """Pick the chat profile for one prompt.
 
     Proofreading wins when the prompt asks for a language fix, even if it also
-    mentions citations. Selection-focused actions (explain_math, verify_claim,
+    mentions citations. LaTeX build/compile error fixing wins over general Q&A
+    and citation synthesis. Selection-focused actions (explain_math, verify_claim,
     formal_tone, tighten) trigger when a passage is selected, or on unambiguous
     math/claim verification requests. A synthesis task selects synthesis.
     General questions and explanation requests select explain.
@@ -120,6 +143,8 @@ def route_chat_profile(prompt: str, *, has_selection: bool = False) -> ChatProfi
     text = prompt or ""
     if any(pattern.search(text) for pattern in _PROOFREADING):
         return "proofreading"
+    if any(pattern.search(text) for pattern in _FIX_LATEX):
+        return "fix_latex"
     if any(pattern.search(text) for pattern in _EXPLAIN_MATH):
         return "explain_math"
     if any(pattern.search(text) for pattern in _VERIFY_CLAIM):
@@ -138,7 +163,7 @@ def route_chat_profile(prompt: str, *, has_selection: bool = False) -> ChatProfi
 
 ROUTER_INSTRUCTION = (
     "Choose the profile for this academic writing request. "
-    "Reply with exactly one of: writing, synthesis, proofreading, tighten, verify_claim, formal_tone, explain_math, explain.\n"
+    "Reply with exactly one of: writing, synthesis, proofreading, tighten, verify_claim, formal_tone, explain_math, explain, fix_latex.\n"
     "writing: draft or revise manuscript prose.\n"
     "synthesis: literature, citations, related work, or comparing sources.\n"
     "proofreading: grammar, spelling, typos, or copyediting.\n"
@@ -147,6 +172,7 @@ ROUTER_INSTRUCTION = (
     "formal_tone: rewrite a passage in a formal, objective academic tone.\n"
     "explain_math: explain mathematical notation, equations, or derivations step by step.\n"
     "explain: answer a question, explain a concept, methodology, experimental setup, or continue a discussion without editing manuscript prose.\n"
+    "fix_latex: diagnose and fix LaTeX compilation errors, warnings, missing packages, or build issues.\n"
     "No other text."
 )
 
@@ -166,6 +192,7 @@ _VALID_ROUTED_PROFILES: frozenset[str] = frozenset(
         "formal_tone",
         "explain_math",
         "explain",
+        "fix_latex",
     }
 )
 
