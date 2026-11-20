@@ -3131,3 +3131,57 @@ async def test_apply_patch_discards_a_diff_that_does_not_match(tmp_path: Path) -
         assert project_service.read_file(meta.project_id, "main.tex").text == source
     finally:
         await http_client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_run_agent_turn_recovers_when_step_fails_with_finish_error(
+    tmp_path: Path,
+) -> None:
+    from app.ai.openrouter import CompletionResult, OpenRouterFinishError
+
+    _, _, project_service, chat_service, http_client = _setup_scripted_services(
+        tmp_path, lambda _payload: "unused"
+    )
+    try:
+        meta = project_service.create_project("Fallback")
+        chat = chat_service.create_chat(meta.project_id, title="Fallback")
+        calls: list[dict] = []
+
+        async def fake_complete(**kwargs):
+            calls.append(kwargs)
+            if kwargs.get("extra_body"):
+                raise OpenRouterFinishError(
+                    "Model completion terminated with finish_reason='error'.",
+                    native_finish_reason="MALFORMED_FUNCTION_CALL",
+                )
+            return CompletionResult(
+                content="Here is the direct answer.",
+                model=kwargs["model"],
+                prompt_tokens=10,
+                completion_tokens=5,
+                cost_usd=0.0,
+                reservation_id="res-1",
+                finish_reason="stop",
+            )
+
+        chat_service.openrouter.complete = fake_complete  # type: ignore[method-assign]
+        events: list[dict] = []
+
+        async def on_event(ev: dict) -> None:
+            events.append(ev)
+
+        res = await chat_service.run_agent_turn(
+            project_id=meta.project_id,
+            chat_id=chat.chat_id,
+            user_prompt="Summarize the introduction.",
+            model="google/gemini-4-hydrogen",
+            profile_id="writing",
+            active_file="main.tex",
+            on_event=on_event,
+        )
+        assert res.reply == "Here is the direct answer."
+        assert len(calls) == 2
+        statuses = [e["content"] for e in events if e["type"] == "status"]
+        assert statuses == ["Reviewing main.tex"]
+    finally:
+        await http_client.aclose()

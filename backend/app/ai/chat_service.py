@@ -34,7 +34,12 @@ from app.ai.manuscript_context import (
     overlay_active_file_outline,
     wants_edit_contract,
 )
-from app.ai.openrouter import ApplyPatchResult, OpenRouterClient, OpenRouterError
+from app.ai.openrouter import (
+    ApplyPatchResult,
+    OpenRouterClient,
+    OpenRouterError,
+    OpenRouterFinishError,
+)
 from app.ai.project_index import (
     ProjectIndex,
     ProjectIndexStore,
@@ -1959,15 +1964,26 @@ class ChatService:
             searches_used=searches_used,
             max_searches=MAX_EXTERNAL_SEARCHES,
         )
-        step_completion = await self.openrouter.complete(
-            model=model,
-            messages=step_msgs,
-            max_tokens=STEP_MAX_TOKENS,
-            extra_body=STEP_EXTRA_BODY,
-            session_id=f"{project_id}:{chat_id}"[:256],
-        )
+        try:
+            step_completion = await self.openrouter.complete(
+                model=model,
+                messages=step_msgs,
+                max_tokens=STEP_MAX_TOKENS,
+                extra_body=STEP_EXTRA_BODY,
+                session_id=f"{project_id}:{chat_id}"[:256],
+            )
+            step_content = step_completion.content
+        except OpenRouterFinishError as exc:
+            if (exc.native_finish_reason or "").upper() != "MALFORMED_FUNCTION_CALL":
+                raise
+            logging.getLogger(__name__).warning(
+                "Agent step completion terminated with MALFORMED_FUNCTION_CALL "
+                "(model=%s); falling back to answer.",
+                model,
+            )
+            step_content = ""
         decision = parse_agent_step_decision(
-            step_completion.content,
+            step_content,
             is_initial=(working_notes is None),
             active_file=prepared.resolved_path,
         )

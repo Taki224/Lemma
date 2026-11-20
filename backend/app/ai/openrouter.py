@@ -41,6 +41,34 @@ class OpenRouterError(RuntimeError):
 class OpenRouterFinishError(OpenRouterError):
     """Raised when OpenRouter terminates a completion with finish_reason='error'."""
 
+    def __init__(self, message: str, *, native_finish_reason: str | None = None) -> None:
+        super().__init__(message)
+        self.native_finish_reason = native_finish_reason
+
+
+_NO_TOOLS_RETRY_NOTE = (
+    "Note: No tools or function calls are available in this environment. "
+    "Respond directly in your message content only; do not invoke any tool or function."
+)
+
+
+def _append_no_tools_reminder(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Return a copy of messages with a plain-content reminder for MALFORMED_FUNCTION_CALL retries."""
+    copied = list(messages)
+    if copied and copied[-1].get("role") == "user":
+        last = dict(copied[-1])
+        content = last.get("content")
+        if isinstance(content, str):
+            last["content"] = f"{content}\n\n{_NO_TOOLS_RETRY_NOTE}" if content else _NO_TOOLS_RETRY_NOTE
+            copied[-1] = last
+            return copied
+        if isinstance(content, list):
+            last["content"] = [*content, {"type": "text", "text": _NO_TOOLS_RETRY_NOTE}]
+            copied[-1] = last
+            return copied
+    copied.append({"role": "user", "content": _NO_TOOLS_RETRY_NOTE})
+    return copied
+
 
 @dataclass(frozen=True)
 class OpenRouterModel:
@@ -510,12 +538,21 @@ class OpenRouterClient:
                         _parse_completion_payload(data, est_prompt_tokens)
                     )
                     break
-                except OpenRouterFinishError:
+                except OpenRouterFinishError as exc:
                     if attempt == 0:
                         logger.warning(
-                            "Retrying OpenRouter completion for model=%s after finish_reason='error'",
+                            "Retrying OpenRouter completion for model=%s after finish_reason='error' (native_finish_reason=%s)",
                             model,
+                            exc.native_finish_reason,
                         )
+                        if (
+                            (exc.native_finish_reason or "").upper() == "MALFORMED_FUNCTION_CALL"
+                            and "tools" not in payload
+                        ):
+                            payload = {
+                                **payload,
+                                "messages": _append_no_tools_reminder(payload["messages"]),
+                            }
                         await asyncio.sleep(0.25)
                         continue
                     raise
@@ -792,15 +829,24 @@ def _parse_completion_payload(
     if isinstance(raw_reason, str) and raw_reason.strip():
         finish_reason = raw_reason.strip().lower()
     if finish_reason == "error":
+        raw_native_reason = first_choice.get("native_finish_reason")
+        native_reason = (
+            str(raw_native_reason).strip()
+            if raw_native_reason is not None and str(raw_native_reason).strip()
+            else None
+        )
         logger.warning(
             "OpenRouter completion terminated with finish_reason='error' "
             "(id=%s, model=%s, provider=%s, native_finish_reason=%s)",
             data.get("id"),
             data.get("model"),
             data.get("provider"),
-            first_choice.get("native_finish_reason"),
+            raw_native_reason,
         )
-        raise OpenRouterFinishError("Model completion terminated with finish_reason='error'.")
+        raise OpenRouterFinishError(
+            "Model completion terminated with finish_reason='error'.",
+            native_finish_reason=native_reason,
+        )
 
     usage = data.get("usage") or {}
     if not isinstance(usage, dict):
