@@ -5,6 +5,7 @@ import inspect
 import json
 import re
 import secrets as pysecrets
+import shutil
 from contextlib import closing
 from dataclasses import asdict, dataclass, field, replace
 from datetime import datetime, timezone
@@ -175,6 +176,7 @@ class ChatSession:
     title: str
     created_at: str
     updated_at: str
+    pinned: bool = False
 
 
 @dataclass(frozen=True)
@@ -792,10 +794,10 @@ class ChatService:
         with closing(self.db.get_connection()) as conn:
             rows = conn.execute(
                 """
-                SELECT chat_id, project_id, title, created_at, updated_at
+                SELECT chat_id, project_id, title, created_at, updated_at, pinned
                 FROM chats
                 WHERE project_id = ?
-                ORDER BY updated_at DESC, created_at DESC;
+                ORDER BY pinned DESC, updated_at DESC, created_at DESC;
                 """,
                 (project_id,),
             ).fetchall()
@@ -806,9 +808,78 @@ class ChatService:
                 title=str(r["title"]),
                 created_at=str(r["created_at"]),
                 updated_at=str(r["updated_at"]),
+                pinned=bool(r["pinned"]),
             )
             for r in rows
         ]
+
+    def update_chat(
+        self,
+        project_id: str,
+        chat_id: str,
+        *,
+        title: str | None = None,
+        pinned: bool | None = None,
+    ) -> ChatSession:
+        """Update mutable metadata (title and/or pinned state) for an existing chat session."""
+        self.project_service.get_project(project_id)
+        with closing(self.db.get_connection()) as conn:
+            row = conn.execute(
+                """
+                SELECT chat_id, project_id, title, created_at, updated_at, pinned
+                FROM chats
+                WHERE project_id = ? AND chat_id = ?;
+                """,
+                (project_id, chat_id),
+            ).fetchone()
+            if row is None:
+                raise KeyError(f"Chat not found: {chat_id}")
+
+            new_title = str(row["title"])
+            new_updated_at = str(row["updated_at"])
+            new_pinned = bool(row["pinned"])
+
+            if title is not None:
+                clean_title = title.strip()[:80]
+                if not clean_title:
+                    raise ValueError("Chat title cannot be empty.")
+                new_title = clean_title
+                new_updated_at = datetime.now(timezone.utc).isoformat()
+
+            if pinned is not None:
+                new_pinned = bool(pinned)
+
+            conn.execute(
+                """
+                UPDATE chats
+                SET title = ?, updated_at = ?, pinned = ?
+                WHERE project_id = ? AND chat_id = ?;
+                """,
+                (new_title, new_updated_at, 1 if new_pinned else 0, project_id, chat_id),
+            )
+            return ChatSession(
+                chat_id=str(row["chat_id"]),
+                project_id=str(row["project_id"]),
+                title=new_title,
+                created_at=str(row["created_at"]),
+                updated_at=new_updated_at,
+                pinned=new_pinned,
+            )
+
+    def delete_chat(self, project_id: str, chat_id: str) -> None:
+        """Delete a chat session, its messages (via cascade), and any chat-only attachments."""
+        self.project_service.get_project(project_id)
+        with closing(self.db.get_connection()) as conn:
+            cursor = conn.execute(
+                "DELETE FROM chats WHERE project_id = ? AND chat_id = ?;",
+                (project_id, chat_id),
+            )
+            if cursor.rowcount == 0:
+                raise KeyError(f"Chat not found: {chat_id}")
+        if _CHAT_ID_RE.match(chat_id):
+            att_dir = self.attachment_dir(project_id, chat_id)
+            if att_dir.is_dir():
+                shutil.rmtree(att_dir)
 
     def list_messages(self, project_id: str, chat_id: str) -> list[ChatMessageRecord]:
         self.project_service.get_project(project_id)

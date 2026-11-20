@@ -28,6 +28,7 @@ export interface ChatSummary {
   chat_id: string;
   title: string;
   updated_at: string;
+  pinned?: boolean;
 }
 
 function formatChatTime(iso: string): string {
@@ -58,6 +59,9 @@ export interface LeftSidebarProps {
   chats?: ChatSummary[];
   activeChatId?: string | null;
   onSelectChat?: (chatId: string) => void;
+  onPinChat?: (chatId: string, pinned: boolean) => Promise<string | null>;
+  onRenameChat?: (chatId: string, title: string) => Promise<string | null>;
+  onDeleteChat?: (chatId: string) => Promise<string | null>;
   githubLinked?: boolean;
   onSyncRepo?: () => Promise<string | null> | void;
   syncingRepo?: boolean;
@@ -190,6 +194,9 @@ export function LeftSidebar({
   chats = [],
   activeChatId = null,
   onSelectChat,
+  onPinChat,
+  onRenameChat,
+  onDeleteChat,
   githubLinked,
   onSyncRepo,
   syncingRepo = false,
@@ -224,6 +231,17 @@ export function LeftSidebar({
   const [dragPath, setDragPath] = useState<string | null>(null);
   const [dropTarget, setDropTarget] = useState<string | null>(null);
 
+  const [chatMenu, setChatMenu] = useState<{ chat: ChatSummary; top: number; right: number } | null>(null);
+  const chatMenuRef = React.useRef<HTMLDivElement>(null);
+  const [renamingChatId, setRenamingChatId] = useState<string | null>(null);
+  const [chatRenameDraft, setChatRenameDraft] = useState<string>("");
+  const [chatRenameError, setChatRenameError] = useState<string | null>(null);
+  const [chatRenameSaving, setChatRenameSaving] = useState<boolean>(false);
+  const chatRenameInputRef = React.useRef<HTMLInputElement>(null);
+  const [pendingDeleteChat, setPendingDeleteChat] = useState<ChatSummary | null>(null);
+  const [chatDeleteError, setChatDeleteError] = useState<string | null>(null);
+  const [deletingChat, setDeletingChat] = useState<boolean>(false);
+
   const uploadFile = async (file: File, folder = "") => {
     if (!onUploadFile) return;
     setUploadStatus({ text: `Uploading ${file.name}…`, error: false });
@@ -250,23 +268,40 @@ export function LeftSidebar({
   }, [renamingPath]);
 
   React.useEffect(() => {
+    const input = chatRenameInputRef.current;
+    if (!renamingChatId || !input) return;
+    input.focus();
+    input.select();
+  }, [renamingChatId]);
+
+  React.useEffect(() => {
     setRootTexError(null);
     setNewFileKind(null);
     setUploadStatus(null);
     setRowMenu(null);
     setRenamingPath(null);
     setPendingDelete(null);
+    setChatMenu(null);
+    setRenamingChatId(null);
+    setPendingDeleteChat(null);
   }, [activeProject?.project_id]);
 
   React.useEffect(() => {
-    if (!rowMenu) return;
+    if (!rowMenu && !chatMenu) return;
     const close = (e: MouseEvent) => {
-      if (rowMenuRef.current && !rowMenuRef.current.contains(e.target as Node)) setRowMenu(null);
+      if (rowMenu && rowMenuRef.current && !rowMenuRef.current.contains(e.target as Node)) setRowMenu(null);
+      if (chatMenu && chatMenuRef.current && !chatMenuRef.current.contains(e.target as Node)) setChatMenu(null);
     };
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setRowMenu(null);
+      if (e.key === "Escape") {
+        setRowMenu(null);
+        setChatMenu(null);
+      }
     };
-    const onScroll = () => setRowMenu(null);
+    const onScroll = () => {
+      setRowMenu(null);
+      setChatMenu(null);
+    };
     document.addEventListener("mousedown", close);
     document.addEventListener("keydown", onKey);
     window.addEventListener("resize", onScroll);
@@ -277,7 +312,7 @@ export function LeftSidebar({
       window.removeEventListener("resize", onScroll);
       document.removeEventListener("scroll", onScroll, true);
     };
-  }, [rowMenu]);
+  }, [rowMenu, chatMenu]);
 
   React.useEffect(() => {
     if (!newMenuOpen) return;
@@ -448,6 +483,61 @@ export function LeftSidebar({
     }
     const rect = e.currentTarget.getBoundingClientRect();
     setRowMenu({ path, isDir, top: rect.bottom + 4, right: window.innerWidth - rect.right });
+  };
+
+  const hasChatActions = Boolean(onPinChat || onRenameChat || onDeleteChat);
+
+  const openChatMenu = (e: React.MouseEvent<HTMLButtonElement>, chat: ChatSummary) => {
+    setRowMenu(null);
+    if (chatMenu?.chat.chat_id === chat.chat_id) {
+      setChatMenu(null);
+      return;
+    }
+    const rect = e.currentTarget.getBoundingClientRect();
+    setChatMenu({ chat, top: rect.bottom + 4, right: window.innerWidth - rect.right });
+  };
+
+  const startChatRename = (chat: ChatSummary) => {
+    setChatMenu(null);
+    setRenamingChatId(chat.chat_id);
+    setChatRenameDraft(chat.title);
+    setChatRenameError(null);
+  };
+
+  const submitChatRename = async () => {
+    if (!renamingChatId || !onRenameChat) return;
+    const target = chatRenameDraft.trim();
+    if (!target) {
+      setChatRenameError("Enter a title.");
+      return;
+    }
+    const current = chats.find((c) => c.chat_id === renamingChatId);
+    if (current && target === current.title) {
+      setRenamingChatId(null);
+      return;
+    }
+    setChatRenameSaving(true);
+    setChatRenameError(null);
+    const error = await onRenameChat(renamingChatId, target);
+    setChatRenameSaving(false);
+    if (error) {
+      setChatRenameError(error);
+      return;
+    }
+    setRenamingChatId(null);
+  };
+
+  const confirmChatDelete = async () => {
+    if (!pendingDeleteChat || !onDeleteChat) return;
+    setDeletingChat(true);
+    setChatDeleteError(null);
+    const error = await onDeleteChat(pendingDeleteChat.chat_id);
+    setDeletingChat(false);
+    if (error) {
+      setChatDeleteError(error);
+      return;
+    }
+    setPendingDeleteChat(null);
   };
 
   const hasRowActions = !!(onMovePath || onDeletePath);
@@ -806,20 +896,89 @@ export function LeftSidebar({
       ) : (
         <div className="lemma-file-tree-section">
           <ul className="lemma-file-list lemma-chat-list" aria-label="Project Chats">
-            {chats.map((chat) => (
-              <li key={chat.chat_id} className={chat.chat_id === activeChatId ? "active" : ""}>
-                <button
-                  type="button"
-                  className="lemma-chat-row"
-                  aria-current={chat.chat_id === activeChatId ? "true" : undefined}
-                  title={chat.title}
-                  onClick={() => onSelectChat?.(chat.chat_id)}
-                >
-                  <span className="lemma-chat-row-title">{chat.title}</span>
-                  <span className="lemma-chat-row-time">{formatChatTime(chat.updated_at)}</span>
-                </button>
-              </li>
-            ))}
+            {chats.map((chat) => {
+              const isRenaming = renamingChatId === chat.chat_id;
+              const isMenuOpen = chatMenu?.chat.chat_id === chat.chat_id;
+              const rowClasses = [
+                chat.chat_id === activeChatId ? "active" : "",
+                chat.pinned ? "is-pinned" : "",
+                isMenuOpen ? "menu-open" : "",
+                hasChatActions ? "has-actions" : "",
+              ]
+                .filter(Boolean)
+                .join(" ");
+              return (
+                <li key={chat.chat_id} className={rowClasses}>
+                  {isRenaming ? (
+                    <div className="lemma-file-rename-row">
+                      <input
+                        ref={chatRenameInputRef}
+                        type="text"
+                        className="lemma-sidebar-filter"
+                        aria-label={`Rename chat ${chat.title}`}
+                        value={chatRenameDraft}
+                        disabled={chatRenameSaving}
+                        onChange={(e) => setChatRenameDraft(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            e.preventDefault();
+                            void submitChatRename();
+                          } else if (e.key === "Escape") {
+                            setRenamingChatId(null);
+                          }
+                        }}
+                        onBlur={() => {
+                          if (!chatRenameSaving) setRenamingChatId(null);
+                        }}
+                      />
+                      {chatRenameError && (
+                        <p className="lemma-root-tex-error" role="alert">
+                          {chatRenameError}
+                        </p>
+                      )}
+                    </div>
+                  ) : (
+                    <>
+                      <button
+                        type="button"
+                        className="lemma-chat-row"
+                        aria-current={chat.chat_id === activeChatId ? "true" : undefined}
+                        title={chat.title}
+                        onClick={() => onSelectChat?.(chat.chat_id)}
+                      >
+                        {chat.pinned && (
+                          <span className="lemma-chat-pin-icon" aria-label="Pinned" title="Pinned">
+                            <svg width="11" height="11" viewBox="0 0 16 16" aria-hidden="true">
+                              <path
+                                d="M9.8 2.2 13.8 6.2 12.6 7.4 11.8 6.8 8.9 9.7 9.4 11.8 8.2 13 5.7 10.5 2.5 13.7 2.3 13.5 5.5 10.3 3 7.8 4.2 6.6 6.3 7.1 9.2 4.2 8.6 3.4Z"
+                                fill="currentColor"
+                              />
+                            </svg>
+                          </span>
+                        )}
+                        <span className="lemma-chat-row-title">{chat.title}</span>
+                        <span className="lemma-chat-row-time">{formatChatTime(chat.updated_at)}</span>
+                      </button>
+                      {hasChatActions && (
+                        <button
+                          type="button"
+                          className="lemma-file-more-btn"
+                          aria-label={`More actions for ${chat.title}`}
+                          aria-haspopup="menu"
+                          aria-expanded={isMenuOpen}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            openChatMenu(e, chat);
+                          }}
+                        >
+                          ⋯
+                        </button>
+                      )}
+                    </>
+                  )}
+                </li>
+              );
+            })}
           </ul>
         </div>
       )}
@@ -905,6 +1064,97 @@ export function LeftSidebar({
               Delete
             </button>
           )}
+        </div>
+      )}
+
+      {chatMenu && (
+        <div
+          className="lemma-file-row-menu"
+          role="menu"
+          ref={chatMenuRef}
+          style={{ top: chatMenu.top, right: chatMenu.right }}
+        >
+          {onPinChat && (
+            <button
+              type="button"
+              role="menuitem"
+              className="lemma-tools-item"
+              onClick={() => {
+                const target = chatMenu.chat;
+                setChatMenu(null);
+                void onPinChat(target.chat_id, !target.pinned);
+              }}
+            >
+              {chatMenu.chat.pinned ? "Unpin" : "Pin"}
+            </button>
+          )}
+          {onRenameChat && (
+            <button
+              type="button"
+              role="menuitem"
+              className="lemma-tools-item"
+              onClick={() => startChatRename(chatMenu.chat)}
+            >
+              Rename
+            </button>
+          )}
+          {onDeleteChat && (
+            <button
+              type="button"
+              role="menuitem"
+              className="lemma-tools-item lemma-hub-menu-danger"
+              onClick={() => {
+                setPendingDeleteChat(chatMenu.chat);
+                setChatDeleteError(null);
+                setChatMenu(null);
+              }}
+            >
+              Delete
+            </button>
+          )}
+        </div>
+      )}
+
+      {pendingDeleteChat && (
+        <div className="lemma-modal-backdrop">
+          <div
+            className="lemma-modal-dialog lemma-project-create-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="delete-chat-title"
+            onKeyDown={(e) => {
+              if (e.key === "Escape" && !deletingChat) setPendingDeleteChat(null);
+            }}
+          >
+            <h2 id="delete-chat-title">Delete chat?</h2>
+            <p className="lemma-subtext">
+              <strong>{pendingDeleteChat.title}</strong> will be permanently deleted.
+            </p>
+            {chatDeleteError && (
+              <p className="lemma-root-tex-error" role="alert">
+                {chatDeleteError}
+              </p>
+            )}
+            <div className="lemma-modal-actions">
+              <button
+                type="button"
+                className="lemma-btn lemma-btn-secondary"
+                autoFocus
+                disabled={deletingChat}
+                onClick={() => setPendingDeleteChat(null)}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="lemma-btn lemma-btn-danger"
+                disabled={deletingChat}
+                onClick={() => void confirmChatDelete()}
+              >
+                {deletingChat ? "Deleting…" : "Delete"}
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

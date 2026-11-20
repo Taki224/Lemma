@@ -174,6 +174,10 @@ ALTER TABLE enabled_models ADD COLUMN provider TEXT NOT NULL DEFAULT 'openrouter
 ALTER TABLE enabled_models ADD COLUMN base_url TEXT NOT NULL DEFAULT '';
 """
 
+V7_MIGRATION_SQL = """
+ALTER TABLE chats ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0;
+"""
+
 
 def _split_sql_statements(sql_script: str) -> list[str]:
     statements: list[str] = []
@@ -209,6 +213,7 @@ class DatabaseManager:
             4: V4_MIGRATION_SQL,
             5: V5_MIGRATION_SQL,
             6: V6_MIGRATION_SQL,
+            7: V7_MIGRATION_SQL,
         }
 
     def register_migration(self, version: int, sql_script: str) -> None:
