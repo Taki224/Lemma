@@ -96,6 +96,8 @@ export function App(): React.ReactElement {
     nonce: number;
     referenceFile?: string;
   } | null>(null);
+  const chatDraftPromptNonceRef = useRef<number>(0);
+  const autoAttachedRunIdRef = useRef<string | null>(null);
   const [chats, setChats] = useState<ChatSummary[]>([]);
   // null = the chat pill starts a new chat on its next prompt.
   const [activeChatId, setActiveChatId] = useState<string | null>(null);
@@ -392,21 +394,32 @@ export function App(): React.ReactElement {
       .then((data: { chats?: ChatSummary[] }) => (Array.isArray(data?.chats) ? data.chats : []))
       .catch(() => []);
 
-  // Reopen the project's most recent chat.
+  // Load the project's chat list; start on a fresh chat instead of auto-loading the most recent one.
   useEffect(() => {
     setChats((prev) => (prev.length === 0 ? prev : []));
     setActiveChatId(null);
+    setChatDraftPrompt(null);
+    setChatSelectNonce(0);
+    autoAttachedRunIdRef.current = null;
     if (!activeProjectId) return;
     let cancelled = false;
     loadChats(activeProjectId).then((list) => {
       if (cancelled) return;
       setChats(list);
-      setActiveChatId((current) => current ?? list[0]?.chat_id ?? null);
     });
     return () => {
       cancelled = true;
     };
   }, [activeProjectId]);
+
+  // If a run is already in progress for the opened project (e.g. after reload), attach to its chat once.
+  useEffect(() => {
+    const run = agentRun.activeRun;
+    if (!run || !activeProjectId || run.projectId !== activeProjectId) return;
+    if (autoAttachedRunIdRef.current === run.runId) return;
+    autoAttachedRunIdRef.current = run.runId;
+    setActiveChatId((current) => current ?? run.chatId);
+  }, [agentRun.activeRun, activeProjectId]);
 
   const handleChatActivity = (chatId: string, shown: boolean) => {
     const projectId = activeProjectIdRef.current;
@@ -782,11 +795,12 @@ export function App(): React.ReactElement {
     if (diag.context_lines?.trim()) {
       parts.push("", "Log context:", diag.context_lines.trim());
     }
-    setChatDraftPrompt((prev) => ({
+    chatDraftPromptNonceRef.current += 1;
+    setChatDraftPrompt({
       text: parts.join("\n"),
-      nonce: (prev?.nonce ?? 0) + 1,
+      nonce: chatDraftPromptNonceRef.current,
       referenceFile: diag.file_path,
-    }));
+    });
   };
 
   const renderWorkspaceTools = () => (
@@ -1512,6 +1526,7 @@ export function App(): React.ReactElement {
                   } as React.CSSProperties}
                 >
                   <FloatingChatBar
+                    key={activeProject.project_id}
                     projectId={activeProject.project_id}
                     activeFile={activeFile}
                     pendingCount={proposedHunks.length}
@@ -1525,7 +1540,9 @@ export function App(): React.ReactElement {
                     onProposeHunks={(hunks) => setManualHunks(hunks)}
                     chatId={activeChatId}
                     chatSelectNonce={chatSelectNonce}
+                    onConsumeChatSelect={() => setChatSelectNonce(0)}
                     draftPrompt={chatDraftPrompt}
+                    onConsumeDraftPrompt={() => setChatDraftPrompt(null)}
                     onChatActivity={handleChatActivity}
                     onNewChat={() => setActiveChatId(null)}
                     projectFiles={files.filter((f) => !f.is_dir).map((f) => f.path)}

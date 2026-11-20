@@ -197,8 +197,12 @@ export interface FloatingChatBarProps {
   chatId?: string | null;
   // Bumped when the user picks a chat elsewhere (sidebar), so a minimised pill reopens.
   chatSelectNonce?: number;
+  // Called once chatSelectNonce has been consumed so remounting does not reopen a minimised pill.
+  onConsumeChatSelect?: () => void;
   // Draft prompt injected from outside (e.g. "Fix in chat" on a compile diagnostic), with a nonce so repeated clicks re-apply.
   draftPrompt?: { text: string; nonce: number; referenceFile?: string } | null;
+  // Called once draftPrompt has been copied into the input so remounting does not re-inject stale prompts.
+  onConsumeDraftPrompt?: () => void;
   // A reply was stored in this chat (new or existing); shown = the pill still displays it.
   onChatActivity?: (chatId: string, shown: boolean) => void;
   onNewChat?: () => void;
@@ -344,7 +348,9 @@ export function FloatingChatBar({
   bufferText,
   chatId,
   chatSelectNonce,
+  onConsumeChatSelect,
   draftPrompt,
+  onConsumeDraftPrompt,
   onChatActivity,
   onNewChat,
   projectFiles = [],
@@ -521,8 +527,15 @@ export function FloatingChatBar({
     };
   }, [chatId, projectId]);
 
+  const onConsumeChatSelectRef = useRef(onConsumeChatSelect);
+  onConsumeChatSelectRef.current = onConsumeChatSelect;
+  const onConsumeDraftPromptRef = useRef(onConsumeDraftPrompt);
+  onConsumeDraftPromptRef.current = onConsumeDraftPrompt;
+
   useEffect(() => {
-    if (chatSelectNonce) setMinimised(false);
+    if (!chatSelectNonce) return;
+    setMinimised(false);
+    onConsumeChatSelectRef.current?.();
   }, [chatSelectNonce]);
 
   useEffect(() => {
@@ -533,6 +546,7 @@ export function FloatingChatBar({
     if (refFile && projectFiles.includes(refFile)) {
       setReferences((prev) => (prev.includes(refFile) ? prev : [...prev, refFile]));
     }
+    onConsumeDraftPromptRef.current?.();
     requestAnimationFrame(() => {
       promptRef.current?.focus();
     });
