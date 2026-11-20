@@ -45,7 +45,7 @@ RUN set -eux; \
     TL_BIN="$(dirname "$(find /usr/local/texlive -name tlmgr -type f -o -name tlmgr -type l | head -n 1)")"; \
     ln -s "${TL_BIN}" /usr/local/texlive/bin; \
     /usr/local/texlive/bin/tlmgr option autobackup 0; \
-    /usr/local/texlive/bin/tlmgr install latexmk biber synctex graphics-cfg helvetic; \
+    /usr/local/texlive/bin/tlmgr install latexmk biber synctex graphics-cfg helvetic xetex fontspec; \
     rm -rf /tmp/install-tl
 
 # Create dedicated unprivileged users:

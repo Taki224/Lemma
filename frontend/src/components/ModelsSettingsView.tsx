@@ -1,9 +1,13 @@
 import React, { useEffect, useRef, useState } from "react";
 import { useEnabledModels } from "../context/EnabledModelsContext";
+import type { ProjectItem, TexEngine } from "./LeftSidebar";
 
 export interface ModelsSettingsViewProps {
   csrfToken: string;
+  activeProject?: ProjectItem | null;
+  onUpdateTexEngine?: (texEngine: TexEngine) => Promise<string | null>;
   onClose?: () => void;
+  hasOpenRouterKey?: boolean;
 }
 
 interface CatalogModel {
@@ -32,9 +36,14 @@ function perMillion(pricePerToken: number): string {
 
 export function ModelsSettingsView({
   csrfToken,
+  activeProject,
+  onUpdateTexEngine,
   onClose,
+  hasOpenRouterKey = false,
 }: ModelsSettingsViewProps): React.ReactElement {
   const { models, refresh } = useEnabledModels();
+  const [texEngineSaving, setTexEngineSaving] = useState<boolean>(false);
+  const [texEngineError, setTexEngineError] = useState<string | null>(null);
   const [query, setQuery] = useState<string>("");
   const [results, setResults] = useState<CatalogModel[]>([]);
   const [catalogAvailable, setCatalogAvailable] = useState<boolean>(true);
@@ -58,12 +67,16 @@ export function ModelsSettingsView({
   const [webSearchEnabled, setWebSearchEnabled] = useState<boolean>(false);
   const [webSearchLoaded, setWebSearchLoaded] = useState<boolean>(false);
   const webSearchSaveSeq = useRef(0);
+  const [applyPatchEnabled, setApplyPatchEnabled] = useState<boolean>(false);
+  const [applyPatchLoaded, setApplyPatchLoaded] = useState<boolean>(false);
+  const applyPatchSaveSeq = useRef(0);
   const [savedKeys, setSavedKeys] = useState<SavedKeysState>({ github: [], zotero: [] });
   const [keyProvider, setKeyProvider] = useState<"github" | "zotero">("github");
   const [keyName, setKeyName] = useState<string>("");
   const [keyValue, setKeyValue] = useState<string>("");
 
   useEffect(() => {
+    if (!hasOpenRouterKey) return;
     let active = true;
     const timer = setTimeout(() => {
       fetch(`/api/settings/models/catalog?q=${encodeURIComponent(query)}`)
@@ -86,7 +99,7 @@ export function ModelsSettingsView({
       active = false;
       clearTimeout(timer);
     };
-  }, [query]);
+  }, [query, hasOpenRouterKey]);
 
   useEffect(() => {
     let active = true;
@@ -175,6 +188,31 @@ export function ModelsSettingsView({
       .catch(() => {
         if (!active) return;
         setWebSearchLoaded(true);
+      });
+    return () => {
+      active = false;
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), SMART_ROUTING_TIMEOUT_MS);
+    fetch("/api/settings/apply-patch", { signal: controller.signal })
+      .then((res) => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return res.json();
+      })
+      .then((data: { enabled?: boolean }) => {
+        if (!active) return;
+        setApplyPatchEnabled(Boolean(data.enabled));
+        setApplyPatchLoaded(true);
+      })
+      .catch(() => {
+        if (!active) return;
+        setApplyPatchLoaded(true);
       });
     return () => {
       active = false;
@@ -290,6 +328,38 @@ export function ModelsSettingsView({
     } catch (err: unknown) {
       if (seq !== webSearchSaveSeq.current) return;
       setWebSearchEnabled(previous);
+      setErrorMessage(err instanceof Error ? err.message : "Request failed");
+    } finally {
+      clearTimeout(timer);
+    }
+  };
+
+  const persistApplyPatch = async (enabled: boolean) => {
+    const seq = ++applyPatchSaveSeq.current;
+    const previous = applyPatchEnabled;
+    setApplyPatchEnabled(enabled);
+    setErrorMessage(null);
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), SMART_ROUTING_TIMEOUT_MS);
+    try {
+      const res = await fetch("/api/settings/apply-patch", {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          "X-CSRF-Token": csrfToken,
+        },
+        body: JSON.stringify({ enabled }),
+        signal: controller.signal,
+      });
+      if (seq !== applyPatchSaveSeq.current) return;
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        setApplyPatchEnabled(previous);
+        setErrorMessage(err.detail || `Request failed (HTTP ${res.status})`);
+      }
+    } catch (err: unknown) {
+      if (seq !== applyPatchSaveSeq.current) return;
+      setApplyPatchEnabled(previous);
       setErrorMessage(err instanceof Error ? err.message : "Request failed");
     } finally {
       clearTimeout(timer);
@@ -554,19 +624,50 @@ export function ModelsSettingsView({
           Only a short search query is sent for the search, not your manuscript. Web searches add
           OpenRouter usage costs.
         </p>
-        <div className="lemma-smart-routing-row">
+        <div className={hasOpenRouterKey ? "lemma-smart-routing-row" : "lemma-smart-routing-row lemma-control-disabled"}>
           <label className="lemma-checkbox-label">
             <input
               type="checkbox"
               checked={webSearchEnabled}
-              disabled={!webSearchLoaded}
+              disabled={!webSearchLoaded || !hasOpenRouterKey}
               onChange={(e) => {
+                if (!hasOpenRouterKey) return;
                 void persistWebSearch(e.target.checked);
               }}
             />
             <span>Allow the AI assistant to search the web</span>
           </label>
         </div>
+        {!hasOpenRouterKey && (
+          <p className="lemma-subtext">Set an OpenRouter API key to use this.</p>
+        )}
+      </section>
+
+      <section className="lemma-settings-card" data-testid="apply-patch-section">
+        <h3>Accurate full-file edits</h3>
+        <p className="lemma-subtext">
+          When this is on, an edit that covers a whole file uses OpenRouter&apos;s apply-patch tool.
+          The model sends a checked diff, and Lemma turns it into the same reviewable edits. A
+          selection or a single section still uses search-and-replace. This uses the Responses API
+          with OpenRouter models. There is no extra fee beyond normal token use.
+        </p>
+        <div className={hasOpenRouterKey ? "lemma-smart-routing-row" : "lemma-smart-routing-row lemma-control-disabled"}>
+          <label className="lemma-checkbox-label">
+            <input
+              type="checkbox"
+              checked={applyPatchEnabled}
+              disabled={!applyPatchLoaded || !hasOpenRouterKey}
+              onChange={(e) => {
+                if (!hasOpenRouterKey) return;
+                void persistApplyPatch(e.target.checked);
+              }}
+            />
+            <span>Use apply-patch when the whole file is edited</span>
+          </label>
+        </div>
+        {!hasOpenRouterKey && (
+          <p className="lemma-subtext">Set an OpenRouter API key to use this.</p>
+        )}
       </section>
 
       <section className="lemma-settings-card" data-testid="chat-naming-section">
@@ -769,8 +870,14 @@ export function ModelsSettingsView({
         )}
       </section>
 
-      <section className="lemma-settings-card" data-testid="catalog-section">
+      <section
+        className={hasOpenRouterKey ? "lemma-settings-card" : "lemma-settings-card lemma-control-disabled"}
+        data-testid="catalog-section"
+      >
         <h3>Add from OpenRouter catalog</h3>
+        {!hasOpenRouterKey && (
+          <p className="lemma-subtext">Set an OpenRouter API key to choose OpenRouter models.</p>
+        )}
         <input
           type="text"
           className="lemma-settings-input"
@@ -778,6 +885,7 @@ export function ModelsSettingsView({
           placeholder="Search models (e.g. claude, gpt-4o)"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
+          disabled={!hasOpenRouterKey}
         />
         {!catalogAvailable && (
           <p className="lemma-error-banner" role="alert" data-testid="catalog-error">
@@ -799,6 +907,7 @@ export function ModelsSettingsView({
                   type="button"
                   className="lemma-btn lemma-btn-primary lemma-btn-xs"
                   aria-label={`Enable ${m.id}`}
+                  disabled={!hasOpenRouterKey}
                   onClick={() => enableFromCatalog(m.id)}
                 >
                   Enable
@@ -809,7 +918,10 @@ export function ModelsSettingsView({
         </ul>
       </section>
 
-      <section className="lemma-settings-card" data-testid="manual-entry-section">
+      <section
+        className={hasOpenRouterKey ? "lemma-settings-card" : "lemma-settings-card lemma-control-disabled"}
+        data-testid="manual-entry-section"
+      >
         <h3>Add by model ID</h3>
         <div className="lemma-model-manual-row">
         <input
@@ -819,6 +931,7 @@ export function ModelsSettingsView({
           placeholder="provider/model-name"
           value={manualId}
           onChange={(e) => setManualId(e.target.value)}
+          disabled={!hasOpenRouterKey}
         />
         <label className="lemma-checkbox-label">
           <input
@@ -826,6 +939,7 @@ export function ModelsSettingsView({
             aria-label="Vision-capable"
             checked={manualVision}
             onChange={(e) => setManualVision(e.target.checked)}
+            disabled={!hasOpenRouterKey}
           />
           Vision-capable
         </label>
@@ -834,6 +948,7 @@ export function ModelsSettingsView({
           className="lemma-btn lemma-btn-primary"
           aria-label="Add Model"
           onClick={addManual}
+          disabled={!hasOpenRouterKey}
         >
           Add
         </button>
@@ -927,6 +1042,48 @@ export function ModelsSettingsView({
             Add local
           </button>
         </div>
+      </section>
+
+      <section className="lemma-settings-card" data-testid="advanced-settings-section">
+        <h3>Advanced</h3>
+        <p className="lemma-subtext">
+          Choose the LaTeX compiler for{" "}
+          {activeProject ? (
+            <>
+              <strong>{activeProject.name}</strong>. Use XeLaTeX for documents that require <code>fontspec</code> or
+              system Unicode fonts.
+            </>
+          ) : (
+            "the active project. Open a project to change its LaTeX compiler."
+          )}
+        </p>
+        <div className="lemma-smart-routing-row">
+          <label htmlFor="tex-engine-select">LaTeX compiler</label>
+          <select
+            id="tex-engine-select"
+            aria-label="LaTeX compiler"
+            value={activeProject?.tex_engine || "pdflatex"}
+            disabled={!activeProject || !onUpdateTexEngine || texEngineSaving}
+            onChange={(e) => {
+              const next = e.target.value as TexEngine;
+              if (!onUpdateTexEngine || next === (activeProject?.tex_engine || "pdflatex")) return;
+              setTexEngineSaving(true);
+              setTexEngineError(null);
+              void onUpdateTexEngine(next).then((err) => {
+                setTexEngineSaving(false);
+                setTexEngineError(err);
+              });
+            }}
+          >
+            <option value="pdflatex">pdfLaTeX</option>
+            <option value="xelatex">XeLaTeX</option>
+          </select>
+        </div>
+        {texEngineError && (
+          <p className="lemma-error-banner" role="alert" data-testid="tex-engine-error">
+            {texEngineError}
+          </p>
+        )}
       </section>
     </div>
   );

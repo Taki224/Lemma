@@ -36,6 +36,8 @@ export interface AuthStatusResponse {
   csrf_token: string | null;
   insecure_http_warning: boolean;
   privacy_consent_accepted: boolean;
+  has_openrouter_key?: boolean;
+  secrets?: { has_openrouter_key?: boolean };
 }
 
 export function App(): React.ReactElement {
@@ -44,6 +46,7 @@ export function App(): React.ReactElement {
   const [csrfToken, setCsrfToken] = useState<string | null>(null);
   const [insecureHttpWarning, setInsecureHttpWarning] = useState<boolean>(false);
   const [privacyConsentAccepted, setPrivacyConsentAccepted] = useState<boolean>(false);
+  const [hasOpenRouterKey, setHasOpenRouterKey] = useState<boolean>(false);
   const [password, setPassword] = useState<string>("");
   const [loginError, setLoginError] = useState<string | null>(null);
   const [workspaceMode, setWorkspaceMode] = useState<"editor" | "review_studio" | "history" | "settings">("editor");
@@ -96,6 +99,8 @@ export function App(): React.ReactElement {
     nonce: number;
     referenceFile?: string;
   } | null>(null);
+  const chatDraftPromptNonceRef = useRef<number>(0);
+  const autoAttachedRunIdRef = useRef<string | null>(null);
   const [chats, setChats] = useState<ChatSummary[]>([]);
   // null = the chat pill starts a new chat on its next prompt.
   const [activeChatId, setActiveChatId] = useState<string | null>(null);
@@ -200,6 +205,9 @@ export function App(): React.ReactElement {
         }
         setInsecureHttpWarning(Boolean(data.insecure_http_warning));
         setPrivacyConsentAccepted(Boolean(data.privacy_consent_accepted));
+        setHasOpenRouterKey(
+          Boolean(data.has_openrouter_key ?? data.secrets?.has_openrouter_key)
+        );
         setLoading(false);
       })
       .catch(() => {
@@ -392,21 +400,32 @@ export function App(): React.ReactElement {
       .then((data: { chats?: ChatSummary[] }) => (Array.isArray(data?.chats) ? data.chats : []))
       .catch(() => []);
 
-  // Reopen the project's most recent chat.
+  // Load the project's chat list; start on a fresh chat instead of auto-loading the most recent one.
   useEffect(() => {
     setChats((prev) => (prev.length === 0 ? prev : []));
     setActiveChatId(null);
+    setChatDraftPrompt(null);
+    setChatSelectNonce(0);
+    autoAttachedRunIdRef.current = null;
     if (!activeProjectId) return;
     let cancelled = false;
     loadChats(activeProjectId).then((list) => {
       if (cancelled) return;
       setChats(list);
-      setActiveChatId((current) => current ?? list[0]?.chat_id ?? null);
     });
     return () => {
       cancelled = true;
     };
   }, [activeProjectId]);
+
+  // If a run is already in progress for the opened project (e.g. after reload), attach to its chat once.
+  useEffect(() => {
+    const run = agentRun.activeRun;
+    if (!run || !activeProjectId || run.projectId !== activeProjectId) return;
+    if (autoAttachedRunIdRef.current === run.runId) return;
+    autoAttachedRunIdRef.current = run.runId;
+    setActiveChatId((current) => current ?? run.chatId);
+  }, [agentRun.activeRun, activeProjectId]);
 
   const handleChatActivity = (chatId: string, shown: boolean) => {
     const projectId = activeProjectIdRef.current;
@@ -782,11 +801,12 @@ export function App(): React.ReactElement {
     if (diag.context_lines?.trim()) {
       parts.push("", "Log context:", diag.context_lines.trim());
     }
-    setChatDraftPrompt((prev) => ({
+    chatDraftPromptNonceRef.current += 1;
+    setChatDraftPrompt({
       text: parts.join("\n"),
-      nonce: (prev?.nonce ?? 0) + 1,
+      nonce: chatDraftPromptNonceRef.current,
       referenceFile: diag.file_path,
-    }));
+    });
   };
 
   const renderWorkspaceTools = () => (
@@ -997,6 +1017,31 @@ export function App(): React.ReactElement {
     workspaceMode === "settings" ? (
       <ModelsSettingsView
         csrfToken={csrfToken || (typeof localStorage !== "undefined" ? localStorage.getItem("lemma_csrf_token") || "" : "")}
+        hasOpenRouterKey={hasOpenRouterKey}
+        activeProject={activeProject}
+        onUpdateTexEngine={async (texEngine) => {
+          if (!activeProject) return null;
+          try {
+            const res = await fetch(`/api/projects/${activeProject.project_id}/settings`, {
+              method: "PATCH",
+              headers: {
+                "Content-Type": "application/json",
+                "X-CSRF-Token": csrfToken || localStorage.getItem("lemma_csrf_token") || "",
+              },
+              body: JSON.stringify({ tex_engine: texEngine }),
+            });
+            if (!res.ok) {
+              const data = await res.json().catch(() => null);
+              return typeof data?.detail === "string" ? data.detail : `Could not change the compiler (HTTP ${res.status}).`;
+            }
+            const updated: ProjectItem = await res.json();
+            setProjects((prev) => prev.map((p) => (p.project_id === updated.project_id ? updated : p)));
+            setActiveProject(updated);
+            return null;
+          } catch {
+            return "Could not change the compiler: network error.";
+          }
+        }}
         onClose={() => setWorkspaceMode("editor")}
       />
     ) : workspaceMode === "review_studio" ? (
@@ -1512,6 +1557,7 @@ export function App(): React.ReactElement {
                   } as React.CSSProperties}
                 >
                   <FloatingChatBar
+                    key={activeProject.project_id}
                     projectId={activeProject.project_id}
                     activeFile={activeFile}
                     pendingCount={proposedHunks.length}
@@ -1525,13 +1571,16 @@ export function App(): React.ReactElement {
                     onProposeHunks={(hunks) => setManualHunks(hunks)}
                     chatId={activeChatId}
                     chatSelectNonce={chatSelectNonce}
+                    onConsumeChatSelect={() => setChatSelectNonce(0)}
                     draftPrompt={chatDraftPrompt}
+                    onConsumeDraftPrompt={() => setChatDraftPrompt(null)}
                     onChatActivity={handleChatActivity}
                     onNewChat={() => setActiveChatId(null)}
                     projectFiles={files.filter((f) => !f.is_dir).map((f) => f.path)}
                     dirtyBuffers={dirtyBuffers}
                     onUploadFile={uploadProjectFile}
                     agentRun={agentRun}
+                    hasOpenRouterKey={hasOpenRouterKey}
                   />
                 </div>
               )}

@@ -8,10 +8,13 @@ export interface ModelSelectProps {
   onChange: (modelId: string) => void;
   visionOnly?: boolean;
   testId?: string;
+  /** When false, OpenRouter models are omitted and the control is disabled if none remain. */
+  openRouterEnabled?: boolean;
 }
 
 const NO_MODELS_HINT = "No models enabled — open Settings > Models";
 const NO_VISION_MODELS_HINT = "No vision-capable model enabled — open Settings > Models";
+const NO_OPENROUTER_KEY_HINT = "Set an OpenRouter API key to choose a model.";
 
 export function ModelSelect({
   id,
@@ -20,9 +23,12 @@ export function ModelSelect({
   onChange,
   visionOnly = false,
   testId,
+  openRouterEnabled = true,
 }: ModelSelectProps): React.ReactElement {
   const { models } = useEnabledModels();
-  const options = visionOnly ? models.filter((m) => m.supports_vision) : models;
+  const visible = visionOnly ? models.filter((m) => m.supports_vision) : models;
+  const options = openRouterEnabled ? visible : visible.filter((m) => m.provider === "local");
+  const needsOpenRouterKey = !openRouterEnabled && options.length === 0;
   const firstOptionId = options[0]?.id;
   const valueIsOption = options.some((m) => m.id === value);
 
@@ -54,7 +60,11 @@ export function ModelSelect({
       </select>
       {options.length === 0 && (
         <span className="lemma-model-select-hint" role="note">
-          {visionOnly ? NO_VISION_MODELS_HINT : NO_MODELS_HINT}
+          {needsOpenRouterKey
+            ? NO_OPENROUTER_KEY_HINT
+            : visionOnly
+              ? NO_VISION_MODELS_HINT
+              : NO_MODELS_HINT}
         </span>
       )}
     </>

@@ -49,13 +49,15 @@ async def compile_project_endpoint(
     request: Request,
     _csrf: None = Depends(require_csrf),
 ) -> dict[str, Any]:
-    _, project_dir, root_tex, build_dir = _resolve_project_and_build(request, project_id)
+    service, project_dir, root_tex, build_dir = _resolve_project_and_build(request, project_id)
+    meta = service.get_project(project_id)
     orchestrator: CompileOrchestrator = request.app.state.compile_orchestrator
 
     report = await orchestrator.compile_project(
         project_id=project_id,
         project_dir=project_dir,
         root_tex=root_tex,
+        **({"tex_engine": meta.tex_engine} if meta.tex_engine != "pdflatex" else {}),
     )
 
     log_text = ""

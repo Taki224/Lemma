@@ -758,5 +758,99 @@ async def test_complete_retries_once_on_finish_reason_error(tmp_path: Path) -> N
     assert client.get_daily_spend_usd() > 0.0
 
 
+@pytest.mark.asyncio
+async def test_complete_malformed_function_call_adds_no_tools_reminder_on_retry(
+    tmp_path: Path,
+) -> None:
+    settings, db, secrets = _make_environment(tmp_path)
+    settings.privacy_consent_accepted = True
+    registry = _make_registry(db, ["google/gemini-4-hydrogen"])
+
+    sent_payloads: list[dict] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content.decode("utf-8"))
+        sent_payloads.append(body)
+        if len(sent_payloads) == 1:
+            return httpx.Response(
+                200,
+                json={
+                    "choices": [
+                        {
+                            "message": {"content": ""},
+                            "finish_reason": "error",
+                            "native_finish_reason": "MALFORMED_FUNCTION_CALL",
+                        }
+                    ]
+                },
+            )
+        return httpx.Response(
+            200,
+            json={
+                "choices": [{"message": {"content": '{"status":"ok","action":"answer"}'}, "finish_reason": "stop"}],
+                "usage": {"prompt_tokens": 12, "completion_tokens": 6},
+            },
+        )
+
+    original_messages = [{"role": "user", "content": "Check my draft."}]
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(handler),
+        base_url="https://openrouter.ai/api/v1",
+    ) as http_client:
+        client = OpenRouterClient(
+            db=db, secrets=secrets, settings=settings, registry=registry, http_client=http_client
+        )
+        res = await client.complete(
+            model="google/gemini-4-hydrogen",
+            messages=original_messages,
+        )
+        assert res.content == '{"status":"ok","action":"answer"}'
+        assert len(sent_payloads) == 2
+        assert sent_payloads[0]["messages"] == [{"role": "user", "content": "Check my draft."}]
+        assert "No tools or function calls are available" in sent_payloads[1]["messages"][-1]["content"]
+        assert original_messages == [{"role": "user", "content": "Check my draft."}]
+
+
+@pytest.mark.asyncio
+async def test_complete_malformed_function_call_preserves_native_finish_reason_on_failure(
+    tmp_path: Path,
+) -> None:
+    from app.ai.openrouter import OpenRouterFinishError
+
+    settings, db, secrets = _make_environment(tmp_path)
+    settings.privacy_consent_accepted = True
+    registry = _make_registry(db, ["google/gemini-4-hydrogen"])
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "choices": [
+                    {
+                        "message": {"content": ""},
+                        "finish_reason": "error",
+                        "native_finish_reason": "MALFORMED_FUNCTION_CALL",
+                    }
+                ]
+            },
+        )
+
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(handler),
+        base_url="https://openrouter.ai/api/v1",
+    ) as http_client:
+        client = OpenRouterClient(
+            db=db, secrets=secrets, settings=settings, registry=registry, http_client=http_client
+        )
+        with pytest.raises(OpenRouterFinishError) as exc_info:
+            await client.complete(
+                model="google/gemini-4-hydrogen",
+                messages=[{"role": "user", "content": "Hello"}],
+            )
+        assert exc_info.value.native_finish_reason == "MALFORMED_FUNCTION_CALL"
+
+    assert client.get_daily_spend_usd() == 0.0
+
+
 
 

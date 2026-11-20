@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import inspect
 import json
+import logging
 import re
 import secrets as pysecrets
 from contextlib import closing
@@ -33,7 +34,12 @@ from app.ai.manuscript_context import (
     overlay_active_file_outline,
     wants_edit_contract,
 )
-from app.ai.openrouter import OpenRouterClient, OpenRouterError
+from app.ai.openrouter import (
+    ApplyPatchResult,
+    OpenRouterClient,
+    OpenRouterError,
+    OpenRouterFinishError,
+)
 from app.ai.project_index import (
     ProjectIndex,
     ProjectIndexStore,
@@ -45,10 +51,17 @@ from app.ai.reference_context import (
     build_reference_context,
     read_agent_excerpt,
 )
+from app.ai.apply_patch import (
+    ApplyPatchError,
+    apply_v4a_update,
+    changed_line_spans,
+    paths_refer_to_same_file,
+)
 from app.ai.output_contracts import (
     CHAT_EDIT_CONTRACT,
     COMPILE_FIX_CONTRACT,
     EXPLAIN_MATH_CONTRACT,
+    apply_patch_contract,
     compose_system_prompt,
 )
 from app.ai.prompts import CHAT_PROFILE_ROLES, PromptProfile, PromptsManager
@@ -71,6 +84,8 @@ from app.latex.outline import parse_project_outline
 from app.latex.log_parser import LatexDiagnostic
 from app.projects.service import ALLOWED_EXTENSIONS, ProjectService
 from app.zotero.staging_repo import CandidateStagingRepository
+
+logger = logging.getLogger(__name__)
 
 _CODE_FENCE_RE = re.compile(
     r"```(?:latex|tex)?\s*\n(.*?)```",
@@ -1553,17 +1568,185 @@ class ChatService:
             turn_index=turn_index,
         )
 
+    def _apply_patch_active(self, model: str, prepared: _PreparedTurnContext) -> bool:
+        """Full-file edits can use apply_patch. Selections, sections, and local models do not."""
+        if not self.settings.apply_patch_enabled:
+            return False
+        if prepared.context.mode != "file":
+            return False
+        if not wants_edit_contract(prepared.profile.id, prepared.profile.role):
+            return False
+        enabled = self.openrouter.registry.get_model(model)
+        return enabled is not None and enabled.provider != "local"
+
+    async def _complete_manuscript_edit(
+        self,
+        *,
+        project_id: str,
+        model: str,
+        prepared: _PreparedTurnContext,
+        user_prompt: str,
+        selection: dict[str, Any] | None,
+        session_id: str,
+        working_notes: list[str] | None = None,
+        search_windows: list[tuple[int, int]] | None = None,
+    ) -> tuple[str, list[ProposedHunk]]:
+        if self._apply_patch_active(model, prepared):
+            try:
+                return await self._reply_from_apply_patch(
+                    project_id=project_id,
+                    model=model,
+                    prepared=prepared,
+                    user_prompt=user_prompt,
+                    selection=selection,
+                    session_id=session_id,
+                    working_notes=working_notes,
+                    search_windows=search_windows,
+                )
+            except OpenRouterError as exc:
+                logger.warning(
+                    "apply_patch failed for model=%s; falling back to search/replace: %s",
+                    model,
+                    exc,
+                )
+        messages = self._build_final_chat_messages(
+            prepared, user_prompt, working_notes=working_notes
+        )
+        completion = await self.openrouter.complete(
+            model=model,
+            messages=messages,
+            vision_images=list(prepared.ref_context.images) or None,
+            max_tokens=CHAT_FINAL_MAX_TOKENS,
+            session_id=session_id,
+        )
+        return self._finalize_reply_and_hunks(
+            project_id=project_id,
+            response_text=completion.content,
+            prepared=prepared,
+            selection=selection,
+            search_windows=search_windows,
+            finish_reason=completion.finish_reason,
+        )
+
+    async def _reply_from_apply_patch(
+        self,
+        *,
+        project_id: str,
+        model: str,
+        prepared: _PreparedTurnContext,
+        user_prompt: str,
+        selection: dict[str, Any] | None,
+        session_id: str,
+        working_notes: list[str] | None,
+        search_windows: list[tuple[int, int]] | None,
+    ) -> tuple[str, list[ProposedHunk]]:
+        del session_id  # Responses calls do not send the chat-completions session id.
+        messages = self._build_final_chat_messages(
+            prepared,
+            user_prompt,
+            working_notes=working_notes,
+            contract=apply_patch_contract(prepared.resolved_path),
+        )
+        result = await self.openrouter.apply_patch(
+            model=model,
+            messages=messages,
+            max_tokens=CHAT_FINAL_MAX_TOKENS,
+        )
+        reply_text, hunks, _applied = self._hunks_from_apply_patch(
+            project_id=project_id,
+            prepared=prepared,
+            result=result,
+        )
+        called_update = any(op.op_type == "update_file" for op in result.operations)
+        if called_update or hunks:
+            return reply_text, hunks
+        if "<<<<<<< SEARCH" in result.content:
+            return self._finalize_reply_and_hunks(
+                project_id=project_id,
+                response_text=result.content,
+                prepared=prepared,
+                selection=selection,
+                search_windows=search_windows,
+                finish_reason=result.finish_reason,
+            )
+        return reply_text, hunks
+
+    def _hunks_from_apply_patch(
+        self,
+        *,
+        project_id: str,
+        prepared: _PreparedTurnContext,
+        result: ApplyPatchResult,
+    ) -> tuple[str, list[ProposedHunk], bool]:
+        """Apply update_file calls in memory and return review hunks. Disk is unchanged."""
+        notes: list[str] = []
+        working = prepared.file_text
+        applied = False
+        for operation in result.operations:
+            if operation.op_type != "update_file":
+                notes.append(
+                    "_Note: A create or delete patch was ignored. "
+                    "Only updates to the active file are proposed._"
+                )
+                continue
+            if not paths_refer_to_same_file(prepared.resolved_path, operation.path):
+                shown = operation.path or "(missing path)"
+                notes.append(
+                    f"_Note: Ignored a patch for {shown}. "
+                    f"Only {prepared.resolved_path} is edited this way._"
+                )
+                continue
+            try:
+                working = apply_v4a_update(working, operation.diff)
+            except ApplyPatchError as exc:
+                notes.append(
+                    f"_Note: A patch for {prepared.resolved_path} could not be applied "
+                    f"({exc}) and was discarded._"
+                )
+                working = prepared.file_text
+                applied = False
+                break
+            applied = True
+
+        hunks: list[ProposedHunk] = []
+        if working != prepared.file_text:
+            for start, end, original, replacement in changed_line_spans(
+                prepared.file_text, working
+            ):
+                hunks.append(
+                    self._build_verified_hunk(
+                        project_id=project_id,
+                        file_path=prepared.resolved_path,
+                        base_etag=prepared.base_etag,
+                        start_line=start,
+                        end_line=end,
+                        original_text=original,
+                        replacement_text=replacement,
+                        bib_entries=prepared.bib_entries,
+                        staged_keys=prepared.staged_keys,
+                    )
+                )
+        reply = result.content.strip()
+        if not reply and hunks:
+            reply = f"Proposed edits to {prepared.resolved_path}."
+        if notes:
+            joined = "\n\n".join(notes)
+            reply = f"{reply}\n\n{joined}" if reply else joined
+        return reply, hunks, applied
+
     @staticmethod
     def _build_final_chat_messages(
         prepared: _PreparedTurnContext,
         user_prompt: str,
         working_notes: list[str] | None = None,
+        contract: str | None = None,
     ) -> list[dict[str, str]]:
-        contract = (
-            CHAT_EDIT_CONTRACT
-            if wants_edit_contract(prepared.profile.id, prepared.profile.role)
-            else EXPLAIN_MATH_CONTRACT
-        )
+        if contract is None:
+            contract = (
+                CHAT_EDIT_CONTRACT
+                if wants_edit_contract(prepared.profile.id, prepared.profile.role)
+                else EXPLAIN_MATH_CONTRACT
+            )
         system_content = compose_system_prompt(prepared.profile.system_prompt, contract)
         if prepared.context.mode == "index":
             context_parts = [
@@ -1795,16 +1978,27 @@ class ChatService:
             searches_used=searches_used,
             max_searches=MAX_EXTERNAL_SEARCHES,
         )
-        step_completion = await self.openrouter.complete(
-            model=model,
-            messages=step_msgs,
-            vision_images=list(prepared.ref_context.images) or None,
-            max_tokens=STEP_MAX_TOKENS,
-            extra_body=STEP_EXTRA_BODY,
-            session_id=f"{project_id}:{chat_id}"[:256],
-        )
+        try:
+            step_completion = await self.openrouter.complete(
+                model=model,
+                messages=step_msgs,
+                vision_images=list(prepared.ref_context.images) or None,
+                max_tokens=STEP_MAX_TOKENS,
+                extra_body=STEP_EXTRA_BODY,
+                session_id=f"{project_id}:{chat_id}"[:256],
+            )
+            step_content = step_completion.content
+        except OpenRouterFinishError as exc:
+            if (exc.native_finish_reason or "").upper() != "MALFORMED_FUNCTION_CALL":
+                raise
+            logging.getLogger(__name__).warning(
+                "Agent step completion terminated with MALFORMED_FUNCTION_CALL "
+                "(model=%s); falling back to answer.",
+                model,
+            )
+            step_content = ""
         decision = parse_agent_step_decision(
-            step_completion.content,
+            step_content,
             is_initial=(working_notes is None),
             active_file=prepared.resolved_path,
         )
@@ -1875,22 +2069,13 @@ class ChatService:
                 attachments=attachments,
                 model=model,
             )
-            messages = self._build_final_chat_messages(prepared, user_prompt)
-
-            completion = await self.openrouter.complete(
-                model=model,
-                messages=messages,
-                vision_images=list(prepared.ref_context.images) or None,
-                max_tokens=CHAT_FINAL_MAX_TOKENS,
-                session_id=f"{project_id}:{chat_id}"[:256],
-            )
-
-            reply_text, hunks = self._finalize_reply_and_hunks(
+            reply_text, hunks = await self._complete_manuscript_edit(
                 project_id=project_id,
-                response_text=completion.content,
+                model=model,
                 prepared=prepared,
+                user_prompt=user_prompt,
                 selection=selection,
-                finish_reason=completion.finish_reason,
+                session_id=f"{project_id}:{chat_id}"[:256],
             )
 
             def persist_messages() -> tuple[str, str]:
@@ -2142,24 +2327,15 @@ class ChatService:
                 on_event=on_event,
             )
 
-        final_msgs = self._build_final_chat_messages(
-            prepared, user_prompt, working_notes=working_notes
-        )
-        final_completion = await self.openrouter.complete(
-            model=model,
-            messages=final_msgs,
-            vision_images=list(prepared.ref_context.images) or None,
-            max_tokens=CHAT_FINAL_MAX_TOKENS,
-            session_id=f"{project_id}:{chat_id}"[:256],
-        )
-
-        reply_text, hunks = self._finalize_reply_and_hunks(
+        reply_text, hunks = await self._complete_manuscript_edit(
             project_id=project_id,
-            response_text=final_completion.content,
+            model=model,
             prepared=prepared,
+            user_prompt=user_prompt,
             selection=selection,
+            session_id=f"{project_id}:{chat_id}"[:256],
+            working_notes=working_notes,
             search_windows=read_windows,
-            finish_reason=final_completion.finish_reason,
         )
 
         if hunks:
