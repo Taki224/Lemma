@@ -676,3 +676,14 @@ def test_web_search_setting_round_trip(tmp_path: Path) -> None:
         assert ok.status_code == 200
         assert ok.json() == {"enabled": True}
         assert client.get("/api/settings/web-search").json() == {"enabled": True}
+
+
+def test_apply_patch_setting_round_trip(tmp_path: Path) -> None:
+    app = _make_app(tmp_path)
+    with TestClient(app) as client:
+        headers = _login(client)
+        assert client.get("/api/settings/apply-patch").json() == {"enabled": False}
+        ok = client.put("/api/settings/apply-patch", json={"enabled": True}, headers=headers)
+        assert ok.status_code == 200
+        assert ok.json() == {"enabled": True}
+        assert client.get("/api/settings/apply-patch").json() == {"enabled": True}

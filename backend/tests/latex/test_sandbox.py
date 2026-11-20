@@ -15,6 +15,7 @@ from app.latex.sandbox import (
 )
 
 HAS_PDFLATEX = shutil.which("pdflatex", path="/Library/TeX/texbin:/usr/local/texlive/bin:/usr/bin:/bin") is not None
+HAS_XELATEX = shutil.which("xelatex", path="/Library/TeX/texbin:/usr/local/texlive/bin:/usr/bin:/bin") is not None
 
 
 def test_hardened_texmf_cnf_and_trailing_colon_env_preserves_system_paths(
@@ -238,3 +239,128 @@ async def test_run_sandboxed_tex_survives_staging_cleanup_permission_error(
 
     assert isinstance(result, SandboxResult)
     assert result.returncode == 0
+
+
+@pytest.mark.parametrize(
+    ("tex_engine", "expected_mode_flag", "expected_cmd_flag"),
+    [
+        ("pdflatex", "-pdf", "-pdflatex="),
+        ("xelatex", "-pdfxe", "-xelatex="),
+    ],
+)
+async def test_run_sandboxed_tex_uses_selected_engine_with_and_without_latexmk(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    tex_engine: str,
+    expected_mode_flag: str,
+    expected_cmd_flag: str,
+) -> None:
+    from app.latex import sandbox
+
+    data_dir = tmp_path / "data"
+    settings = bootstrap_data_dir(data_dir)
+    project_dir = settings.projects_dir / f"proj_{tex_engine}"
+    project_dir.mkdir(parents=True)
+    build_dir = project_dir / ".build"
+    build_dir.mkdir()
+    (project_dir / "main.tex").write_text(
+        "\\documentclass{article}\n\\begin{document}\nHi\n\\end{document}\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(sandbox, "probe_bwrap_support", lambda force_reprobe=False: False)
+
+    recorded_cmds: list[list[str]] = []
+
+    async def fake_exec_step(cmd, cwd, env, remaining_timeout, memory_limit_mb):
+        recorded_cmds.append(list(cmd))
+        return 0, "", "", False
+
+    monkeypatch.setattr(sandbox, "_exec_step", fake_exec_step)
+
+    # 1. With latexmk available
+    monkeypatch.setattr(
+        sandbox.shutil,
+        "which",
+        lambda name, path=None: f"/usr/local/texlive/bin/{name}" if name in {"latexmk", tex_engine} else None,
+    )
+    res_latexmk = await run_sandboxed_tex(
+        project_dir=project_dir,
+        build_dir=build_dir,
+        root_tex="main.tex",
+        settings=settings,
+        tex_engine=tex_engine,  # type: ignore[arg-type]
+    )
+    assert res_latexmk.returncode == 0
+    assert len(recorded_cmds) == 1
+    cmd_str = " ".join(recorded_cmds[0])
+    assert "/usr/local/texlive/bin/latexmk" in cmd_str
+    assert expected_mode_flag in recorded_cmds[0]
+    assert any(part.startswith(f"{expected_cmd_flag}/usr/local/texlive/bin/{tex_engine}") for part in recorded_cmds[0])
+
+    # 2. Without latexmk (direct binary invocation)
+    recorded_cmds.clear()
+    monkeypatch.setattr(
+        sandbox.shutil,
+        "which",
+        lambda name, path=None: f"/usr/local/texlive/bin/{name}" if name == tex_engine else None,
+    )
+    res_direct = await run_sandboxed_tex(
+        project_dir=project_dir,
+        build_dir=build_dir,
+        root_tex="main.tex",
+        settings=settings,
+        tex_engine=tex_engine,  # type: ignore[arg-type]
+    )
+    assert res_direct.returncode == 0
+    assert len(recorded_cmds) == 1
+    assert recorded_cmds[0][0] == f"/usr/local/texlive/bin/{tex_engine}"
+    assert "-no-shell-escape" in recorded_cmds[0]
+
+
+async def test_run_sandboxed_tex_rejects_unsupported_engine(tmp_path: Path) -> None:
+    data_dir = tmp_path / "data"
+    settings = bootstrap_data_dir(data_dir)
+    project_dir = settings.projects_dir / "bad_engine"
+    project_dir.mkdir(parents=True)
+    build_dir = project_dir / ".build"
+    build_dir.mkdir()
+    (project_dir / "main.tex").write_text("\\documentclass{article}", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="Unsupported tex_engine"):
+        await run_sandboxed_tex(
+            project_dir=project_dir,
+            build_dir=build_dir,
+            root_tex="main.tex",
+            settings=settings,
+            tex_engine="bogustex",  # type: ignore[arg-type]
+        )
+
+
+@pytest.mark.requires_tex
+@pytest.mark.skipif(not HAS_XELATEX, reason="TeX Live xelatex not installed on host")
+async def test_fontspec_compiles_with_xelatex(tmp_path: Path) -> None:
+    data_dir = tmp_path / "data"
+    settings = bootstrap_data_dir(data_dir)
+    project_dir = settings.projects_dir / "fontspec_xe"
+    project_dir.mkdir(parents=True)
+    build_dir = project_dir / ".build"
+    build_dir.mkdir()
+    (project_dir / "main.tex").write_text(
+        "\\documentclass{article}\n"
+        "\\usepackage{fontspec}\n"
+        "\\begin{document}\n"
+        "Hello from XeLaTeX with fontspec.\n"
+        "\\end{document}\n",
+        encoding="utf-8",
+    )
+
+    result = await run_sandboxed_tex(
+        project_dir=project_dir,
+        build_dir=build_dir,
+        root_tex="main.tex",
+        settings=settings,
+        tex_engine="xelatex",
+    )
+    assert result.returncode == 0
+    assert (build_dir / "main.pdf").is_file()

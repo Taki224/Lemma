@@ -1,9 +1,12 @@
 import React, { useState } from "react";
 
+export type TexEngine = "pdflatex" | "xelatex";
+
 export interface ProjectItem {
   project_id: string;
   name: string;
   root_tex: string;
+  tex_engine?: TexEngine;
   zotero_collection_key?: string | null;
   updated_at?: string;
 }

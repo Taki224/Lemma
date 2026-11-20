@@ -26,6 +26,21 @@ CHAT_EDIT_CONTRACT = (
     "- Write explanations outside the blocks. If no edit is needed, reply without any block."
 )
 
+
+def apply_patch_contract(active_path: str) -> str:
+    """Ask for an apply_patch tool call instead of SEARCH/REPLACE."""
+    return (
+        "- Edit only the active file by calling the apply_patch tool. "
+        f"The file path must be exactly `{active_path}`.\n"
+        "- Do not use SEARCH/REPLACE blocks, do not return the whole file, and do not wrap "
+        "the manuscript in a code fence.\n"
+        "- Send a V4A diff of the lines that change. Start each change with `@@` and a line "
+        "copied from the file so the change can be located, then lines prefixed with a space "
+        "(unchanged), `-` (removed), or `+` (added).\n"
+        "- One tool call may contain several `@@` hunks. Do not create, delete, or rename files.\n"
+        "- Write a short explanation in the message. If no edit is needed, do not call the tool."
+    )
+
 QUICK_EDIT_CONTRACT = (
     "- Reply with ONLY the replacement LaTeX for the given passage.\n"
     "- No code fences, no commentary, nothing before or after the replacement."

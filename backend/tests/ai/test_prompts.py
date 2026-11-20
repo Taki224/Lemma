@@ -33,6 +33,7 @@ def test_seeds_default_prompts_yaml_on_first_boot(tmp_path: Path) -> None:
     assert "tighten" in profiles
     assert "verify_claim" in profiles
     assert "explain_math" in profiles
+    assert "fix_latex" in profiles
     assert "compile_autofix" in profiles
 
     reviewer_names = {
@@ -124,6 +125,7 @@ def test_editing_defaults_include_preservation_and_grounding_rules() -> None:
         "proofreading",
         "tighten",
         "formal_tone",
+        "fix_latex",
         "compile_autofix",
     }
     for prof in checked:

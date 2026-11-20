@@ -11,7 +11,7 @@ from typing import Literal
 
 from app.config import AppSettings
 from app.latex.ctan_helper import detect_missing_packages, install_missing_packages
-from app.latex.sandbox import SandboxMode, run_sandboxed_tex
+from app.latex.sandbox import SandboxMode, TexEngine, run_sandboxed_tex
 
 CompileStatus = Literal["success", "failed", "timeout"]
 CompileSuccessCallback = (
@@ -147,6 +147,7 @@ class CompileOrchestrator:
         project_id: str,
         project_dir: Path,
         root_tex: str | None = None,
+        tex_engine: TexEngine = "pdflatex",
     ) -> CompileReport:
         project_dir = Path(project_dir).resolve()
         build_dir = project_dir / ".build"
@@ -172,6 +173,7 @@ class CompileOrchestrator:
                     root_tex=resolved_root,
                     settings=self.settings,
                     isolated_texmf=False,
+                    **({"tex_engine": tex_engine} if tex_engine != "pdflatex" else {}),
                 )
                 total_duration_ms += sandbox_res.duration_ms
 

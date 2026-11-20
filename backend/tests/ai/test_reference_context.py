@@ -93,11 +93,14 @@ def test_pdf_sends_best_matching_pages(tmp_path: Path) -> None:
 def test_active_image_missing_and_budget(tmp_path: Path) -> None:
     service, pid = _service(tmp_path)
     service.write_file(pid, "big.tex", "word " * 5000)
-    ctx = _build(service, pid, ["main.tex", "fig.png", "nope.tex", "big.tex"], budget=1000)
+    (service.get_project_dir(pid) / "fig.png").write_bytes(b"\x89PNG\r\n\x1a\nfake")
+    ctx = _build(service, pid, ["main.tex", "fig.png", "nope.tex", "missing.png", "big.tex"], budget=1000)
     details = {s.path: s.detail for s in ctx.summaries}
     assert details["main.tex"] == "open in the editor, already in context"
-    assert details["fig.png"] == "image, name only"
+    assert details["fig.png"] == "image"
     assert details["nope.tex"] == "not found, not sent"
+    assert details["missing.png"] == "not found, not sent"
+    assert ctx.images == (b"\x89PNG\r\n\x1a\nfake",)
     assert "trimmed" in details["big.tex"] or details["big.tex"].startswith("first")
     assert sum(len(p) for p in ctx.parts) < 1600
 
@@ -395,3 +398,72 @@ def test_read_agent_excerpt_without_start_line_populates_span(tmp_path: Path) ->
     )
     assert bib_res.ok is True
     assert (bib_res.start_line, bib_res.end_line) == (1, 4)
+
+
+def test_attached_image_is_loaded_for_vision_and_respects_model_capability(tmp_path: Path) -> None:
+    service, pid = _service(tmp_path)
+    att_dir = tmp_path / "att"
+    att_dir.mkdir()
+    img_bytes = b"\x89PNG\r\n\x1a\nchart-bytes"
+    (att_dir / "chart.png").write_bytes(img_bytes)
+
+    vision_ctx = build_reference_context(
+        project_service=service,
+        project_id=pid,
+        references=[],
+        buffers={},
+        prompt="Explain this chart",
+        scope_text="",
+        active_path="main.tex",
+        markers=MARKERS,
+        attachments=["chart.png"],
+        attachment_dir=att_dir,
+        supports_vision=True,
+    )
+    assert vision_ctx.images == (img_bytes,)
+    assert vision_ctx.summaries[0].detail == "image"
+    assert vision_ctx.summaries[0].kind == "attachment"
+    assert "Attached image (chart.png) is included visually" in vision_ctx.parts[0]
+
+    no_vision_ctx = build_reference_context(
+        project_service=service,
+        project_id=pid,
+        references=[],
+        buffers={},
+        prompt="Explain this chart",
+        scope_text="",
+        active_path="main.tex",
+        markers=MARKERS,
+        attachments=["chart.png"],
+        attachment_dir=att_dir,
+        supports_vision=False,
+    )
+    assert no_vision_ctx.images == ()
+    assert no_vision_ctx.summaries[0].detail == "image, name only (model does not support vision)"
+    assert "does not support vision" in no_vision_ctx.parts[0]
+
+
+def test_svg_attached_as_text_and_binary_eps_marked_binary(tmp_path: Path) -> None:
+    service, pid = _service(tmp_path)
+    att_dir = tmp_path / "att"
+    att_dir.mkdir()
+    (att_dir / "diagram.svg").write_text('<svg><circle r="5"/></svg>', encoding="utf-8")
+    (att_dir / "legacy.eps").write_bytes(b"\xc5\xd0\xd3\xc6\xff\xfe")
+
+    ctx = build_reference_context(
+        project_service=service,
+        project_id=pid,
+        references=[],
+        buffers={},
+        prompt="Check diagram",
+        scope_text="",
+        active_path="main.tex",
+        markers=MARKERS,
+        attachments=["diagram.svg", "legacy.eps"],
+        attachment_dir=att_dir,
+    )
+    details = {s.path: s.detail for s in ctx.summaries}
+    assert details["diagram.svg"].startswith("whole file")
+    assert any('<circle r="5"/>' in p for p in ctx.parts)
+    assert details["legacy.eps"] == "binary file, not sent"
+    assert ctx.images == ()
