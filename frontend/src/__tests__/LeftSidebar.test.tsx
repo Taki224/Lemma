@@ -173,3 +173,29 @@ test("test_new_project_open_and_cancel_notify_dismiss", () => {
   expect(onCreateProjectDismiss).toHaveBeenCalledTimes(2);
   expect(screen.queryByRole("dialog")).toBeNull();
 });
+
+test("test_compiler_selector_calls_onUpdateTexEngine", async () => {
+  const onUpdateTexEngine = vi.fn(async () => null);
+  render(
+    <LeftSidebar
+      activeProject={{
+        project_id: "manuscript-2026",
+        name: "Quantum Paper",
+        root_tex: "main.tex",
+        tex_engine: "pdflatex",
+      }}
+      activeFile="main.tex"
+      onSelectFile={vi.fn()}
+      onJumpToLine={vi.fn()}
+      onUpdateTexEngine={onUpdateTexEngine}
+    />
+  );
+
+  const select = screen.getByLabelText("Compiler") as HTMLSelectElement;
+  expect(select.value).toBe("pdflatex");
+
+  fireEvent.change(select, { target: { value: "xelatex" } });
+  await waitFor(() => {
+    expect(onUpdateTexEngine).toHaveBeenCalledWith("xelatex");
+  });
+});

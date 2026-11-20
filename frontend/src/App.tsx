@@ -1223,6 +1223,29 @@ export function App(): React.ReactElement {
                       return "Could not change the main document: network error.";
                     }
                   }}
+                  onUpdateTexEngine={async (texEngine) => {
+                    if (!activeProject) return null;
+                    try {
+                      const res = await fetch(`/api/projects/${activeProject.project_id}/settings`, {
+                        method: "PATCH",
+                        headers: {
+                          "Content-Type": "application/json",
+                          "X-CSRF-Token": csrfToken || localStorage.getItem("lemma_csrf_token") || "",
+                        },
+                        body: JSON.stringify({ tex_engine: texEngine }),
+                      });
+                      if (!res.ok) {
+                        const data = await res.json().catch(() => null);
+                        return typeof data?.detail === "string" ? data.detail : `Could not change the compiler (HTTP ${res.status}).`;
+                      }
+                      const updated: ProjectItem = await res.json();
+                      setProjects((prev) => prev.map((p) => (p.project_id === updated.project_id ? updated : p)));
+                      setActiveProject(updated);
+                      return null;
+                    } catch {
+                      return "Could not change the compiler: network error.";
+                    }
+                  }}
                   activeFile={activeFile}
                   files={files}
                   onSelectFile={setActiveFile}

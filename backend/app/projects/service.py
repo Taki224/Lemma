@@ -14,6 +14,7 @@ from typing import AsyncIterator
 import secrets as pysecrets
 
 from app.db import DatabaseManager
+from app.latex.sandbox import SUPPORTED_TEX_ENGINES, TexEngine
 
 EXCLUDED_DIRS = frozenset({".git", ".build", ".texmf", "paper-reviews", "__pycache__"})
 ALLOWED_EXTENSIONS = frozenset(
@@ -118,6 +119,7 @@ class ProjectMetadata:
     zotero_collection_key: str | None
     created_at: str
     updated_at: str
+    tex_engine: TexEngine = "pdflatex"
 
 
 @dataclass(frozen=True)
@@ -268,7 +270,7 @@ class ProjectService:
         with closing(self.db.get_connection()) as conn:
             rows = conn.execute(
                 """
-                SELECT project_id, name, root_tex, zotero_collection_key, created_at, updated_at
+                SELECT project_id, name, root_tex, tex_engine, zotero_collection_key, created_at, updated_at
                 FROM projects
                 ORDER BY updated_at DESC, created_at DESC;
                 """
@@ -281,6 +283,7 @@ class ProjectService:
                 zotero_collection_key=r["zotero_collection_key"],
                 created_at=str(r["created_at"]),
                 updated_at=str(r["updated_at"]),
+                tex_engine=str(r["tex_engine"] or "pdflatex"),  # type: ignore[arg-type]
             )
             for r in rows
         ]
@@ -289,7 +292,7 @@ class ProjectService:
         with closing(self.db.get_connection()) as conn:
             row = conn.execute(
                 """
-                SELECT project_id, name, root_tex, zotero_collection_key, created_at, updated_at
+                SELECT project_id, name, root_tex, tex_engine, zotero_collection_key, created_at, updated_at
                 FROM projects
                 WHERE project_id = ?;
                 """,
@@ -304,6 +307,7 @@ class ProjectService:
             zotero_collection_key=row["zotero_collection_key"],
             created_at=str(row["created_at"]),
             updated_at=str(row["updated_at"]),
+            tex_engine=str(row["tex_engine"] or "pdflatex"),  # type: ignore[arg-type]
         )
 
     def update_project_settings(
@@ -311,6 +315,7 @@ class ProjectService:
         project_id: str,
         root_tex: str | None = None,
         zotero_collection_key: str | None | object = _UNSET,
+        tex_engine: str | None = None,
     ) -> ProjectMetadata:
         current = self.get_project(project_id)
         project_dir = self.get_project_dir(project_id)
@@ -319,6 +324,15 @@ class ProjectService:
         if root_tex is not None:
             validated = self._validate_project_rel_path(project_dir, root_tex)
             new_root_tex = validated.relative_to(project_dir.resolve()).as_posix()
+
+        new_tex_engine = current.tex_engine
+        if tex_engine is not None:
+            cleaned_engine = tex_engine.strip().lower()
+            if cleaned_engine not in SUPPORTED_TEX_ENGINES:
+                raise ValueError(
+                    f"Unsupported tex_engine {tex_engine!r}; expected one of {', '.join(SUPPORTED_TEX_ENGINES)}"
+                )
+            new_tex_engine = cleaned_engine  # type: ignore[assignment]
 
         if zotero_collection_key is _UNSET:
             new_zotero_key = current.zotero_collection_key
@@ -331,10 +345,10 @@ class ProjectService:
             conn.execute(
                 """
                 UPDATE projects
-                SET root_tex = ?, zotero_collection_key = ?, updated_at = ?
+                SET root_tex = ?, tex_engine = ?, zotero_collection_key = ?, updated_at = ?
                 WHERE project_id = ?;
                 """,
-                (new_root_tex, new_zotero_key, now_iso, project_id),
+                (new_root_tex, new_tex_engine, new_zotero_key, now_iso, project_id),
             )
         return self.get_project(project_id)
 
@@ -384,10 +398,10 @@ class ProjectService:
             with closing(self.db.get_connection()) as conn:
                 conn.execute(
                     """
-                    INSERT INTO projects (project_id, name, root_tex, zotero_collection_key, created_at, updated_at)
-                    VALUES (?, ?, ?, ?, ?, ?);
+                    INSERT INTO projects (project_id, name, root_tex, tex_engine, zotero_collection_key, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?);
                     """,
-                    (slug, clean_name, source.root_tex, source.zotero_collection_key, now_iso, now_iso),
+                    (slug, clean_name, source.root_tex, source.tex_engine, source.zotero_collection_key, now_iso, now_iso),
                 )
         except Exception:
             shutil.rmtree(target_dir, ignore_errors=True)

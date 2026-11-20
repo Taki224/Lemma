@@ -16,6 +16,13 @@ from typing import Literal
 from app.config import AppSettings
 
 SandboxMode = Literal["bwrap", "uid_rlimit"]
+TexEngine = Literal["pdflatex", "xelatex"]
+SUPPORTED_TEX_ENGINES: tuple[TexEngine, ...] = ("pdflatex", "xelatex")
+
+_LATEXMK_ENGINE_FLAGS: dict[TexEngine, tuple[str, str]] = {
+    "pdflatex": ("-pdf", "-pdflatex"),
+    "xelatex": ("-pdfxe", "-xelatex"),
+}
 
 _BWRAP_PROBE_CACHE: bool | None = None
 
@@ -414,10 +421,13 @@ async def run_sandboxed_tex(
     root_tex: str,
     settings: AppSettings,
     isolated_texmf: bool = False,
+    tex_engine: TexEngine = "pdflatex",
 ) -> SandboxResult:
     """Execute LaTeX compilation inside an isolated staging workspace with hardened texmf.cnf."""
     if not root_tex or root_tex.startswith("-") or ".." in root_tex:
         raise ValueError(f"Invalid root_tex filename: {root_tex!r}")
+    if tex_engine not in SUPPORTED_TEX_ENGINES:
+        raise ValueError(f"Unsupported tex_engine: {tex_engine!r}")
     start_ns = time.monotonic_ns()
     project_dir = Path(project_dir).resolve()
     build_dir = Path(build_dir).resolve()
@@ -459,7 +469,7 @@ async def run_sandboxed_tex(
 
         safe_path = env["PATH"]
         latexmk_bin = shutil.which("latexmk", path=safe_path)
-        pdflatex_bin = shutil.which("pdflatex", path=safe_path) or "pdflatex"
+        engine_bin = shutil.which(tex_engine, path=safe_path) or tex_engine
         bibtex_bin = shutil.which("bibtex", path=safe_path)
 
         stem = Path(root_tex).stem
@@ -473,11 +483,12 @@ async def run_sandboxed_tex(
         returncode = 0
 
         if latexmk_bin:
+            mode_flag, cmd_flag = _LATEXMK_ENGINE_FLAGS[tex_engine]
             inner = [
                 latexmk_bin,
                 "-norc",
-                "-pdf",
-                f"-pdflatex={pdflatex_bin} -no-shell-escape %O %S",
+                mode_flag,
+                f"{cmd_flag}={engine_bin} -no-shell-escape %O %S",
                 "-synctex=1",
                 "-recorder",
                 "-interaction=nonstopmode",
@@ -504,8 +515,8 @@ async def run_sandboxed_tex(
             stdout_parts.append(out)
             stderr_parts.append(err)
         else:
-            pdflatex_inner = [
-                pdflatex_bin,
+            engine_inner = [
+                engine_bin,
                 "-no-shell-escape",
                 "-synctex=1",
                 "-recorder",
@@ -513,8 +524,8 @@ async def run_sandboxed_tex(
                 "-file-line-error",
                 root_tex,
             ]
-            pdflatex_cmd = _wrap_command(
-                inner_cmd=pdflatex_inner,
+            engine_cmd = _wrap_command(
+                inner_cmd=engine_inner,
                 staging_dir=staging_dir,
                 project_texmf_dir=project_texmf_dir,
                 global_texmf_dir=global_texmf_dir,
@@ -524,7 +535,7 @@ async def run_sandboxed_tex(
                 memory_limit_mb=settings.compile_memory_limit_mb,
             )
             returncode, out, err, timed_out = await _exec_step(
-                cmd=pdflatex_cmd,
+                cmd=engine_cmd,
                 cwd=staging_dir,
                 env=env,
                 remaining_timeout=deadline - time.monotonic(),
@@ -569,7 +580,7 @@ async def run_sandboxed_tex(
                         if timed_out or time.monotonic() >= deadline:
                             break
                         returncode, out2, err2, timed_out = await _exec_step(
-                            cmd=pdflatex_cmd,
+                            cmd=engine_cmd,
                             cwd=staging_dir,
                             env=env,
                             remaining_timeout=deadline - time.monotonic(),
@@ -579,7 +590,7 @@ async def run_sandboxed_tex(
                         stderr_parts.append(err2)
                 elif not had_warm_aux and "Rerun to get cross-references right" in log_text:
                     returncode, out2, err2, timed_out = await _exec_step(
-                        cmd=pdflatex_cmd,
+                        cmd=engine_cmd,
                         cwd=staging_dir,
                         env=env,
                         remaining_timeout=deadline - time.monotonic(),
