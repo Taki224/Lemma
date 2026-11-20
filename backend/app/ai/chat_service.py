@@ -1392,6 +1392,17 @@ class ChatService:
 
         return [], 0
 
+    def _model_supports_vision(self, model: str) -> bool:
+        if not model:
+            return True
+        registry = getattr(self.openrouter, "registry", None)
+        if registry is None:
+            return True
+        enabled = registry.get_model(model)
+        if enabled is None:
+            return True
+        return bool(enabled.supports_vision)
+
     async def _prepare_turn_context(
         self,
         *,
@@ -1406,6 +1417,7 @@ class ChatService:
         references: list[str] | None,
         reference_buffers: dict[str, str] | None,
         attachments: list[str] | None,
+        model: str = "",
     ) -> _PreparedTurnContext:
         meta = await asyncio.to_thread(self.project_service.get_project, project_id)
         profile = self.prompts_manager.get_profile(profile_id)
@@ -1507,6 +1519,7 @@ class ChatService:
                 markers=context.quote_markers,
                 attachments=frozen_attachments,
                 attachment_dir=self.attachment_dir(project_id, chat_id) if frozen_attachments else None,
+                supports_vision=self._model_supports_vision(model),
             )
             project_files = [f.path for f in self.project_service.list_files(project_id)]
             history = self._recent_history(project_id, chat_id)
@@ -1602,6 +1615,7 @@ class ChatService:
         completion = await self.openrouter.complete(
             model=model,
             messages=messages,
+            vision_images=list(prepared.ref_context.images) or None,
             max_tokens=CHAT_FINAL_MAX_TOKENS,
             session_id=session_id,
         )
@@ -1968,6 +1982,7 @@ class ChatService:
             step_completion = await self.openrouter.complete(
                 model=model,
                 messages=step_msgs,
+                vision_images=list(prepared.ref_context.images) or None,
                 max_tokens=STEP_MAX_TOKENS,
                 extra_body=STEP_EXTRA_BODY,
                 session_id=f"{project_id}:{chat_id}"[:256],
@@ -2052,6 +2067,7 @@ class ChatService:
                 references=references,
                 reference_buffers=reference_buffers,
                 attachments=attachments,
+                model=model,
             )
             reply_text, hunks = await self._complete_manuscript_edit(
                 project_id=project_id,
@@ -2173,6 +2189,7 @@ class ChatService:
             references=references,
             reference_buffers=reference_buffers,
             attachments=attachments,
+            model=model,
         )
 
         user_msg_id = await asyncio.to_thread(

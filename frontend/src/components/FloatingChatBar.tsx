@@ -1357,6 +1357,32 @@ export function FloatingChatBar({
               setPromptText(e.target.value);
               updateAtQuery(e.target.value, e.target.selectionStart ?? e.target.value.length);
             }}
+            onPaste={(e) => {
+              const items = Array.from(e.clipboardData?.items ?? []);
+              const imageFiles: File[] = [];
+              for (const item of items) {
+                if (item.kind === "file" && item.type.startsWith("image/")) {
+                  const file = item.getAsFile();
+                  if (file) imageFiles.push(file);
+                }
+              }
+              if (imageFiles.length === 0 && e.clipboardData?.files?.length) {
+                for (const file of Array.from(e.clipboardData.files)) {
+                  if (file.type.startsWith("image/")) imageFiles.push(file);
+                }
+              }
+              if (imageFiles.length === 0) return;
+              e.preventDefault();
+              for (let i = 0; i < imageFiles.length; i += 1) {
+                const raw = imageFiles[i];
+                const ext = raw.type.split("/")[1]?.replace("jpeg", "jpg") || "png";
+                const needsUniqueName = !raw.name || raw.name === "image.png" || attachments.includes(raw.name);
+                const file = needsUniqueName
+                  ? new File([raw], `pasted-image-${Date.now()}${i > 0 ? `-${i}` : ""}.${ext}`, { type: raw.type })
+                  : raw;
+                void attachToChat(file);
+              }
+            }}
             onBlur={() => {
               if (atQuery !== null) closePicker();
             }}

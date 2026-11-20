@@ -37,7 +37,9 @@ AGENT_READ_BUDGET_CHARS = 24_000
 AGENT_SLICE_MAX_LINES = 200
 
 TEXT_EXTENSIONS = frozenset({".tex", ".sty", ".cls", ".bst", ".md", ".txt", ".csv", ".json", ".yaml", ".yml"})
-IMAGE_EXTENSIONS = frozenset({".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp", ".eps"})
+IMAGE_EXTENSIONS = frozenset({".png", ".jpg", ".jpeg", ".gif", ".webp"})
+MAX_VISION_IMAGES = MAX_REFERENCES
+MAX_VISION_IMAGE_BYTES = 20 * 1024 * 1024
 
 _WORD_RE = re.compile(r"[A-Za-z][A-Za-z0-9-]{3,}")
 logger = logging.getLogger(__name__)
@@ -63,6 +65,7 @@ class ReferenceContext:
     parts: list[str]
     summaries: list[ReferenceSummary]
     quote_markers: tuple[str, ...]
+    images: tuple[bytes, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -219,6 +222,7 @@ def build_reference_context(
     budget: int = REFERENCE_BUDGET_CHARS,
     attachments: list[str] | None = None,
     attachment_dir: Path | None = None,
+    supports_vision: bool = True,
 ) -> ReferenceContext:
     """Pack referenced project files and chat attachments into read-only quoted blocks.
 
@@ -232,6 +236,7 @@ def build_reference_context(
 
     parts: list[str] = []
     summaries: list[ReferenceSummary] = []
+    images: list[bytes] = []
     remaining = budget
     seen: set[tuple[str, str]] = set()
     items = [(raw.strip().lstrip("/"), "reference") for raw in references[:MAX_REFERENCES]]
@@ -251,16 +256,32 @@ def build_reference_context(
                 target = attachment_dir / path
                 if target.is_symlink() or not target.is_file():
                     raise FileNotFoundError(path)
-            elif ext == ".pdf":
+            elif ext == ".pdf" or ext in IMAGE_EXTENSIONS:
                 project_dir = project_service.get_project_dir(project_id)
                 target = project_service._validate_project_rel_path(project_dir, path)
-                if not target.is_file():
+                if target.is_symlink() or not target.is_file():
                     raise FileNotFoundError(path)
             if ext == ".pdf":
                 body, detail = _pack_pdf(target, terms, remaining)
             elif ext in IMAGE_EXTENSIONS:
-                summaries.append(ReferenceSummary(path, "image, name only", kind))
-                parts.append(f"Referenced image (not shown to you, name only): {path}")
+                if not supports_vision:
+                    summaries.append(ReferenceSummary(path, "image, name only (model does not support vision)", kind))
+                    parts.append(f"Referenced image (not shown to you — selected model does not support vision, name only): {path}")
+                    continue
+                if len(images) >= MAX_VISION_IMAGES:
+                    summaries.append(ReferenceSummary(path, "image limit reached, not sent", kind))
+                    continue
+                if target.stat().st_size > MAX_VISION_IMAGE_BYTES:
+                    summaries.append(ReferenceSummary(path, "image too large, not sent", kind))
+                    continue
+                img_bytes = target.read_bytes()
+                if not img_bytes:
+                    summaries.append(ReferenceSummary(path, "empty image, not sent", kind))
+                    continue
+                images.append(img_bytes)
+                source_label = "Attached" if kind == "attachment" else "Referenced"
+                summaries.append(ReferenceSummary(path, "image", kind))
+                parts.append(f"{source_label} image ({path}) is included visually in this message.")
                 continue
             else:
                 if kind == "attachment":
@@ -273,7 +294,10 @@ def build_reference_context(
                     body, detail, _, _ = _pack_bib(text, wanted_keys, remaining)
                 else:
                     body, detail, _, _ = _pack_text(text, terms, remaining)
-        except (FileNotFoundError, PermissionError, KeyError, UnicodeDecodeError):
+        except UnicodeDecodeError:
+            summaries.append(ReferenceSummary(path, "binary file, not sent", kind))
+            continue
+        except (FileNotFoundError, PermissionError, KeyError):
             summaries.append(ReferenceSummary(path, "not found, not sent", kind))
             continue
         except Exception:
@@ -299,7 +323,7 @@ def build_reference_context(
         )
         summaries.append(ReferenceSummary(path, detail, kind))
 
-    return ReferenceContext(parts=parts, summaries=summaries, quote_markers=all_markers)
+    return ReferenceContext(parts=parts, summaries=summaries, quote_markers=all_markers, images=tuple(images))
 
 
 def _slice_lines(

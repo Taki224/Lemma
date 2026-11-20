@@ -2904,6 +2904,95 @@ async def test_run_agent_turn_external_searches_have_separate_capped_budget(
         await http_client.aclose()
 
 
+@pytest.mark.asyncio
+async def test_run_agent_turn_sends_attached_image_to_vision_model(tmp_path: Path) -> None:
+    import base64
+
+    captured: list[dict] = []
+    responses = iter([
+        json.dumps({"status": "Inspecting image", "action": "answer"}),
+        "This is a diagram.",
+    ])
+    _, _db, project_service, chat_service, http_client = _setup_scripted_services(
+        tmp_path, lambda _payload: next(responses), captured
+    )
+    try:
+        meta = project_service.create_project("Vision")
+        chat = chat_service.create_chat(meta.project_id, title="Vision")
+        png_bytes = b"\x89PNG\r\n\x1a\nvision-payload"
+        chat_service.save_attachment(meta.project_id, chat.chat_id, "plot.png", png_bytes)
+
+        await chat_service.run_agent_turn(
+            project_id=meta.project_id,
+            chat_id=chat.chat_id,
+            user_prompt="Describe plot.png",
+            model="anthropic/claude-3.7-sonnet",
+            profile_id="writing",
+            active_file="main.tex",
+            attachments=["plot.png"],
+        )
+
+        expected_b64 = base64.b64encode(png_bytes).decode("ascii")
+        assert len(captured) == 2
+        for payload in captured:
+            content = payload["messages"][-1]["content"]
+            assert isinstance(content, list)
+            image_parts = [p for p in content if p.get("type") == "image_url"]
+            assert len(image_parts) == 1
+            assert image_parts[0]["image_url"]["url"] == f"data:image/png;base64,{expected_b64}"
+    finally:
+        await http_client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_run_agent_turn_skips_image_bytes_for_non_vision_model(tmp_path: Path) -> None:
+    from app.ai.model_registry import EnabledModel
+
+    captured: list[dict] = []
+    responses = iter([
+        json.dumps({"status": "Preparing response", "action": "answer"}),
+        "I cannot see the image.",
+    ])
+    _, _db, project_service, chat_service, http_client = _setup_scripted_services(
+        tmp_path, lambda _payload: next(responses), captured
+    )
+    try:
+        chat_service.openrouter.registry.enable(
+            EnabledModel(
+                id="text/only-model",
+                name="Text Only",
+                context_length=32768,
+                prompt_price_per_token=0.0,
+                completion_price_per_token=0.0,
+                supports_vision=False,
+                verified=True,
+            )
+        )
+        meta = project_service.create_project("NoVision")
+        chat = chat_service.create_chat(meta.project_id, title="NoVision")
+        chat_service.save_attachment(
+            meta.project_id, chat.chat_id, "plot.png", b"\x89PNG\r\n\x1a\npayload"
+        )
+
+        await chat_service.run_agent_turn(
+            project_id=meta.project_id,
+            chat_id=chat.chat_id,
+            user_prompt="Describe plot.png",
+            model="text/only-model",
+            profile_id="writing",
+            active_file="main.tex",
+            attachments=["plot.png"],
+        )
+
+        assert len(captured) == 2
+        for payload in captured:
+            content = payload["messages"][-1]["content"]
+            assert isinstance(content, str)
+            assert "does not support vision" in content
+    finally:
+        await http_client.aclose()
+
+
 def _patch_response(diff: str, path: str = "main.tex", text: str = "Updated the line.") -> dict:
     return {
         "status": "completed",
