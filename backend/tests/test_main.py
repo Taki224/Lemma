@@ -23,7 +23,7 @@ def test_health_endpoint_bootstraps_data_and_db(
         assert response.status_code == 200
         payload = response.json()
         assert payload["status"] == "ok"
-        assert payload["schema_version"] == 6
+        assert payload["schema_version"] == 8
         assert payload["sandbox_mode"] in ("bwrap", "uid_rlimit")
 
     assert (data_dir / "config" / "settings.yaml").is_file()

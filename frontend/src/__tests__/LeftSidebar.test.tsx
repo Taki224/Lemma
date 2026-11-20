@@ -173,3 +173,58 @@ test("test_new_project_open_and_cancel_notify_dismiss", () => {
   expect(onCreateProjectDismiss).toHaveBeenCalledTimes(2);
   expect(screen.queryByRole("dialog")).toBeNull();
 });
+
+test("test_chats_pin_rename_and_delete_actions", async () => {
+  const onPinChat = vi.fn(async () => null);
+  const onRenameChat = vi.fn(async () => null);
+  const onDeleteChat = vi.fn(async () => null);
+  render(
+    <LeftSidebar
+      activeProject={{ project_id: "p1", name: "Paper", root_tex: "main.tex" }}
+      activeFile="main.tex"
+      files={[{ path: "main.tex", name: "main.tex", is_dir: false, size_bytes: 10 }]}
+      onSelectFile={vi.fn()}
+      onJumpToLine={vi.fn()}
+      chats={[
+        { chat_id: "c1", title: "Draft Intro", updated_at: "2026-11-20T12:00:00Z", pinned: false },
+        { chat_id: "c2", title: "Pinned Chat", updated_at: "2026-11-20T11:00:00Z", pinned: true },
+      ]}
+      activeChatId="c1"
+      onSelectChat={vi.fn()}
+      onPinChat={onPinChat}
+      onRenameChat={onRenameChat}
+      onDeleteChat={onDeleteChat}
+    />
+  );
+
+  fireEvent.click(screen.getByRole("tab", { name: "Chats" }));
+
+  // Pin unpinned chat
+  fireEvent.click(screen.getByRole("button", { name: "More actions for Draft Intro" }));
+  fireEvent.click(screen.getByRole("menuitem", { name: "Pin" }));
+  expect(onPinChat).toHaveBeenCalledWith("c1", true);
+
+  // Unpin pinned chat
+  fireEvent.click(screen.getByRole("button", { name: "More actions for Pinned Chat" }));
+  fireEvent.click(screen.getByRole("menuitem", { name: "Unpin" }));
+  expect(onPinChat).toHaveBeenCalledWith("c2", false);
+
+  // Rename chat
+  fireEvent.click(screen.getByRole("button", { name: "More actions for Draft Intro" }));
+  fireEvent.click(screen.getByRole("menuitem", { name: "Rename" }));
+  const renameInput = screen.getByLabelText("Rename chat Draft Intro");
+  fireEvent.change(renameInput, { target: { value: "Final Intro" } });
+  fireEvent.keyDown(renameInput, { key: "Enter" });
+  await waitFor(() => {
+    expect(onRenameChat).toHaveBeenCalledWith("c1", "Final Intro");
+  });
+
+  // Delete chat with confirmation modal
+  fireEvent.click(screen.getByRole("button", { name: "More actions for Draft Intro" }));
+  fireEvent.click(screen.getByRole("menuitem", { name: "Delete" }));
+  expect(screen.getByRole("dialog")).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+  await waitFor(() => {
+    expect(onDeleteChat).toHaveBeenCalledWith("c1");
+  });
+});

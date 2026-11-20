@@ -15,7 +15,7 @@ def test_fresh_db_initializes_v1_schema_and_wal_mode(tmp_path: Path) -> None:
     manager = DatabaseManager(db_path=db_path, backup_dir=backup_dir)
     version = manager.initialize()
 
-    assert version == 7
+    assert version == 8
     assert db_path.is_file()
 
     with manager.get_connection() as conn:
@@ -49,7 +49,7 @@ def test_fresh_db_initializes_v1_schema_and_wal_mode(tmp_path: Path) -> None:
         applied = conn.execute(
             "SELECT version, applied_at FROM schema_migrations ORDER BY version;"
         ).fetchall()
-        assert [a[0] for a in applied] == [1, 2, 3, 4, 5, 6, 7]
+        assert [a[0] for a in applied] == [1, 2, 3, 4, 5, 6, 7, 8]
         assert all(a[1] for a in applied)
 
 
@@ -57,7 +57,7 @@ def test_v2_creates_enabled_models_tables(tmp_path: Path) -> None:
     manager = DatabaseManager(
         db_path=tmp_path / "app.db", backup_dir=tmp_path / "backups"
     )
-    assert manager.initialize() == 7
+    assert manager.initialize() == 8
 
     with manager.get_connection() as conn:
         tables = {
@@ -87,7 +87,7 @@ def test_v2_upgrades_existing_v1_database(tmp_path: Path) -> None:
         )
 
     upgraded = DatabaseManager(db_path=db_path, backup_dir=backup_dir)
-    assert upgraded.initialize() == 7
+    assert upgraded.initialize() == 8
 
     with upgraded.get_connection() as conn:
         row = conn.execute(
@@ -153,7 +153,7 @@ def test_v5_migration_creates_project_index_files_table(tmp_path: Path) -> None:
         db_path=tmp_path / "app.db", backup_dir=tmp_path / "backups"
     )
     version = manager.initialize()
-    assert version == 7
+    assert version == 8
 
     with manager.get_connection() as conn:
         cols = conn.execute("PRAGMA table_info(project_index_files);").fetchall()
@@ -192,7 +192,7 @@ def test_v5_migration_cascades_on_project_delete(tmp_path: Path) -> None:
     manager = DatabaseManager(
         db_path=tmp_path / "app.db", backup_dir=tmp_path / "backups"
     )
-    assert manager.initialize() == 7
+    assert manager.initialize() == 8
 
     with manager.get_connection() as conn:
         conn.execute(

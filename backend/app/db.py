@@ -178,6 +178,10 @@ V7_MIGRATION_SQL = """
 ALTER TABLE projects ADD COLUMN tex_engine TEXT NOT NULL DEFAULT 'pdflatex';
 """
 
+V8_MIGRATION_SQL = """
+ALTER TABLE chats ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0;
+"""
+
 
 def _split_sql_statements(sql_script: str) -> list[str]:
     statements: list[str] = []
@@ -214,6 +218,7 @@ class DatabaseManager:
             5: V5_MIGRATION_SQL,
             6: V6_MIGRATION_SQL,
             7: V7_MIGRATION_SQL,
+            8: V8_MIGRATION_SQL,
         }
 
     def register_migration(self, version: int, sql_script: str) -> None:

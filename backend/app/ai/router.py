@@ -9,7 +9,7 @@ from typing import Any, Literal
 import httpx
 
 from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile
-from fastapi.responses import StreamingResponse
+from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel
 
 from app.ai.chat_service import (
@@ -51,6 +51,11 @@ class UpdatePromptsRequest(BaseModel):
 
 class CreateChatRequest(BaseModel):
     title: str = "New Chat"
+
+
+class UpdateChatRequest(BaseModel):
+    title: str | None = None
+    pinned: bool | None = None
 
 
 class SendMessageRequest(BaseModel):
@@ -149,6 +154,51 @@ async def create_project_chat(
     except PermissionError as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
     return asdict(chat)
+
+
+@ai_router.patch("/api/projects/{project_id}/chats/{chat_id}")
+async def update_project_chat(
+    project_id: str,
+    chat_id: str,
+    payload: UpdateChatRequest,
+    request: Request,
+    _session: SessionRecord = Depends(require_authenticated_session),
+    _csrf: None = Depends(require_csrf),
+) -> dict[str, Any]:
+    chat_service: ChatService = request.app.state.chat_service
+    try:
+        chat = await asyncio.to_thread(
+            chat_service.update_chat,
+            project_id,
+            chat_id,
+            title=payload.title,
+            pinned=payload.pinned,
+        )
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    return asdict(chat)
+
+
+@ai_router.delete("/api/projects/{project_id}/chats/{chat_id}", status_code=204)
+async def delete_project_chat(
+    project_id: str,
+    chat_id: str,
+    request: Request,
+    _session: SessionRecord = Depends(require_authenticated_session),
+    _csrf: None = Depends(require_csrf),
+) -> Response:
+    chat_service: ChatService = request.app.state.chat_service
+    try:
+        await asyncio.to_thread(chat_service.delete_chat, project_id, chat_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    return Response(status_code=204)
 
 
 @ai_router.get("/api/projects/{project_id}/chats/{chat_id}/messages")

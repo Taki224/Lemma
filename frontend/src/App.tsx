@@ -436,6 +436,64 @@ export function App(): React.ReactElement {
     });
   };
 
+  const resolveCsrfToken = () =>
+    csrfToken || (typeof localStorage !== "undefined" ? localStorage.getItem("lemma_csrf_token") || "" : "");
+
+  const handleUpdateChat = async (
+    chatId: string,
+    patch: { title?: string; pinned?: boolean },
+    fallbackError: string
+  ): Promise<string | null> => {
+    const projectId = activeProjectIdRef.current;
+    if (!projectId) return "No active project.";
+    try {
+      const res = await fetch(`/api/projects/${projectId}/chats/${chatId}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          "X-CSRF-Token": resolveCsrfToken(),
+        },
+        body: JSON.stringify(patch),
+      });
+      if (!res.ok) {
+        const err = (await res.json().catch(() => ({}))) as { detail?: string };
+        return err.detail || fallbackError;
+      }
+      const list = await loadChats(projectId);
+      if (activeProjectIdRef.current === projectId) setChats(list);
+      return null;
+    } catch {
+      return `${fallbackError} Network error.`;
+    }
+  };
+
+  const handleDeleteChat = async (chatId: string): Promise<string | null> => {
+    const projectId = activeProjectIdRef.current;
+    if (!projectId) return "No active project.";
+    try {
+      const res = await fetch(`/api/projects/${projectId}/chats/${chatId}`, {
+        method: "DELETE",
+        headers: {
+          "X-CSRF-Token": resolveCsrfToken(),
+        },
+      });
+      if (!res.ok) {
+        const err = (await res.json().catch(() => ({}))) as { detail?: string };
+        return err.detail || "Could not delete chat.";
+      }
+      const list = await loadChats(projectId);
+      if (activeProjectIdRef.current === projectId) {
+        setChats(list);
+        if (activeChatIdRef.current === chatId) {
+          setActiveChatId(list[0]?.chat_id ?? null);
+        }
+      }
+      return null;
+    } catch {
+      return "Could not delete chat. Network error.";
+    }
+  };
+
   // Unsaved buffers and the stale-PDF flag belong to one project: never carry them over to another.
   useEffect(() => {
     setDirtyBuffers((prev) => (Object.keys(prev).length === 0 ? prev : {}));
@@ -1397,6 +1455,13 @@ export function App(): React.ReactElement {
                     setActiveChatId(chatId);
                     setChatSelectNonce((n) => n + 1);
                   }}
+                  onPinChat={(chatId, pinned) =>
+                    handleUpdateChat(chatId, { pinned }, pinned ? "Could not pin chat." : "Could not unpin chat.")
+                  }
+                  onRenameChat={(chatId, title) =>
+                    handleUpdateChat(chatId, { title }, "Could not rename chat.")
+                  }
+                  onDeleteChat={handleDeleteChat}
                   githubLinked={githubLinked}
                   onSyncRepo={githubLinked ? handleGithubSync : undefined}
                   syncingRepo={githubBusy}

@@ -1015,6 +1015,17 @@ html, body {
   padding-left: 14px;
 }
 
+.lemma-file-tree-section .lemma-file-list li.has-actions > .lemma-chat-row {
+  padding-right: 30px;
+}
+
+.lemma-chat-pin-icon {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  color: var(--accent-blue, #7aa2f7);
+}
+
 .lemma-chat-row-title {
   flex: 1;
   min-width: 0;

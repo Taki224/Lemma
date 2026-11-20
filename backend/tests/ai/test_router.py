@@ -1111,3 +1111,101 @@ def test_active_run_endpoint_and_auth_csrf_checks(tmp_path: Path) -> None:
         release.set()
         assert client.post(f"/api/ai/runs/{run_id}/stop", headers=headers).status_code == 200
         assert client.get("/api/ai/runs/active").json() == {"run": None}
+
+
+def test_pin_rename_and_delete_chat(tmp_path: Path) -> None:
+    app, http_client, _captured = _setup_chat_app(tmp_path, "Reply.")
+    with TestClient(app) as client:
+        headers = _login_and_get_csrf(client)
+        _install_mock_openrouter(app, http_client)
+        project_id = client.post(
+            "/api/projects", json={"name": "Chat Mgmt"}, headers=headers
+        ).json()["project_id"]
+
+        c1 = client.post(
+            f"/api/projects/{project_id}/chats", json={"title": "First Chat"}, headers=headers
+        ).json()
+        c2 = client.post(
+            f"/api/projects/{project_id}/chats", json={"title": "Second Chat"}, headers=headers
+        ).json()
+        assert c1["pinned"] is False
+        assert c2["pinned"] is False
+
+        # Initially c2 is newer so it comes first
+        listed = client.get(f"/api/projects/{project_id}/chats").json()["chats"]
+        assert [c["chat_id"] for c in listed] == [c2["chat_id"], c1["chat_id"]]
+
+        # Pin c1 -> c1 moves to the top
+        pin_res = client.patch(
+            f"/api/projects/{project_id}/chats/{c1['chat_id']}",
+            json={"pinned": True},
+            headers=headers,
+        )
+        assert pin_res.status_code == 200
+        assert pin_res.json()["pinned"] is True
+        listed_pinned = client.get(f"/api/projects/{project_id}/chats").json()["chats"]
+        assert [c["chat_id"] for c in listed_pinned] == [c1["chat_id"], c2["chat_id"]]
+
+        # Rename c1
+        rename_res = client.patch(
+            f"/api/projects/{project_id}/chats/{c1['chat_id']}",
+            json={"title": "  Renamed Chat  "},
+            headers=headers,
+        )
+        assert rename_res.status_code == 200
+        assert rename_res.json()["title"] == "Renamed Chat"
+        assert rename_res.json()["pinned"] is True
+
+        # Empty title is rejected
+        bad_rename = client.patch(
+            f"/api/projects/{project_id}/chats/{c1['chat_id']}",
+            json={"title": "   "},
+            headers=headers,
+        )
+        assert bad_rename.status_code == 400
+
+        # Unpin c1
+        unpin_res = client.patch(
+            f"/api/projects/{project_id}/chats/{c1['chat_id']}",
+            json={"pinned": False},
+            headers=headers,
+        )
+        assert unpin_res.status_code == 200
+        assert unpin_res.json()["pinned"] is False
+
+        # Upload an attachment to c1, then delete c1 and verify cleanup
+        att_res = client.post(
+            f"/api/projects/{project_id}/chats/{c1['chat_id']}/attachments",
+            files={"file": ("notes.txt", b"hello", "text/plain")},
+            headers=headers,
+        )
+        assert att_res.status_code == 201
+        att_dir = app.state.chat_service.attachment_dir(project_id, c1["chat_id"])
+        assert att_dir.is_dir()
+
+        del_res = client.delete(
+            f"/api/projects/{project_id}/chats/{c1['chat_id']}",
+            headers=headers,
+        )
+        assert del_res.status_code == 204
+        assert not att_dir.exists()
+
+        remaining = client.get(f"/api/projects/{project_id}/chats").json()["chats"]
+        assert [c["chat_id"] for c in remaining] == [c2["chat_id"]]
+
+        # Missing chat returns 404 for both patch and delete
+        assert (
+            client.patch(
+                f"/api/projects/{project_id}/chats/chat_missing",
+                json={"pinned": True},
+                headers=headers,
+            ).status_code
+            == 404
+        )
+        assert (
+            client.delete(
+                f"/api/projects/{project_id}/chats/chat_missing",
+                headers=headers,
+            ).status_code
+            == 404
+        )
