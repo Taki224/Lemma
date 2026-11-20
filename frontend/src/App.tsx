@@ -1004,6 +1004,30 @@ export function App(): React.ReactElement {
       <ModelsSettingsView
         csrfToken={csrfToken || (typeof localStorage !== "undefined" ? localStorage.getItem("lemma_csrf_token") || "" : "")}
         hasOpenRouterKey={hasOpenRouterKey}
+        activeProject={activeProject}
+        onUpdateTexEngine={async (texEngine) => {
+          if (!activeProject) return null;
+          try {
+            const res = await fetch(`/api/projects/${activeProject.project_id}/settings`, {
+              method: "PATCH",
+              headers: {
+                "Content-Type": "application/json",
+                "X-CSRF-Token": csrfToken || localStorage.getItem("lemma_csrf_token") || "",
+              },
+              body: JSON.stringify({ tex_engine: texEngine }),
+            });
+            if (!res.ok) {
+              const data = await res.json().catch(() => null);
+              return typeof data?.detail === "string" ? data.detail : `Could not change the compiler (HTTP ${res.status}).`;
+            }
+            const updated: ProjectItem = await res.json();
+            setProjects((prev) => prev.map((p) => (p.project_id === updated.project_id ? updated : p)));
+            setActiveProject(updated);
+            return null;
+          } catch {
+            return "Could not change the compiler: network error.";
+          }
+        }}
         onClose={() => setWorkspaceMode("editor")}
       />
     ) : workspaceMode === "review_studio" ? (

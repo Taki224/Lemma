@@ -126,3 +126,66 @@ def test_forward_endpoint_returns_width_height(tmp_path: Path) -> None:
         assert isinstance(data["height"], float)
         assert data["width"] > 0.0
         assert data["height"] > 0.0
+
+
+def test_project_tex_engine_setting_and_compile_dispatch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from app.latex.compiler import CompileReport
+
+    data_dir = tmp_path / "data"
+    settings = bootstrap_data_dir(data_dir).model_copy(
+        update={"workspace_password": "latex-router-password"}
+    )
+    app = create_app(settings=settings)
+
+    captured_engines: list[str] = []
+
+    async def fake_compile_project(
+        project_id: str,
+        project_dir: Path,
+        root_tex: str | None = None,
+        tex_engine: str = "pdflatex",
+    ) -> CompileReport:
+        captured_engines.append(tex_engine)
+        return CompileReport(
+            project_id=project_id,
+            root_tex=root_tex or "main.tex",
+            status="success",
+            returncode=0,
+            duration_ms=10,
+            sandbox_mode="uid_rlimit",
+        )
+
+    with TestClient(app) as client:
+        monkeypatch.setattr(app.state.compile_orchestrator, "compile_project", fake_compile_project)
+
+        login_res = client.post("/api/auth/login", json={"password": "latex-router-password"})
+        assert login_res.status_code == 200
+        headers = {"X-CSRF-Token": login_res.json()["csrf_token"]}
+
+        create_res = client.post("/api/projects", json={"name": "Engine Test"}, headers=headers)
+        assert create_res.status_code == 201
+        project = create_res.json()
+        assert project["tex_engine"] == "pdflatex"
+        project_id = project["project_id"]
+
+        bad_res = client.patch(
+            f"/api/projects/{project_id}/settings",
+            json={"tex_engine": "bogustex"},
+            headers=headers,
+        )
+        assert bad_res.status_code == 400
+
+        patch_res = client.patch(
+            f"/api/projects/{project_id}/settings",
+            json={"tex_engine": "xelatex"},
+            headers=headers,
+        )
+        assert patch_res.status_code == 200
+        assert patch_res.json()["tex_engine"] == "xelatex"
+
+        compile_res = client.post(f"/api/projects/{project_id}/compile", headers=headers)
+        assert compile_res.status_code == 200
+        assert compile_res.json()["status"] == "success"
+        assert captured_engines == ["xelatex"]

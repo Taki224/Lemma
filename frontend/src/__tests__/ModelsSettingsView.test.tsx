@@ -666,4 +666,32 @@ describe("ModelsSettingsView", () => {
       expect(screen.queryByTestId("saved-key-github-Personal GitHub")).toBeNull();
     });
   });
+
+  it("changes the active project's LaTeX compiler under Advanced settings", async () => {
+    installCatalogFetch([]);
+    const onUpdateTexEngine = vi.fn(async () => null);
+    render(
+      <EnabledModelsProvider initialModels={[makeModel("a/model")]}>
+        <ModelsSettingsView
+          csrfToken="csrf-tok"
+          activeProject={{
+            project_id: "manuscript-2026",
+            name: "Quantum Paper",
+            root_tex: "main.tex",
+            tex_engine: "pdflatex",
+          }}
+          onUpdateTexEngine={onUpdateTexEngine}
+        />
+      </EnabledModelsProvider>
+    );
+
+    expect(screen.getByTestId("advanced-settings-section")).toBeTruthy();
+    const select = screen.getByLabelText("LaTeX compiler") as HTMLSelectElement;
+    expect(select.value).toBe("pdflatex");
+
+    fireEvent.change(select, { target: { value: "xelatex" } });
+    await waitFor(() => {
+      expect(onUpdateTexEngine).toHaveBeenCalledWith("xelatex");
+    });
+  });
 });

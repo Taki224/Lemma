@@ -36,6 +36,8 @@ def test_dockerfile_uses_upstream_install_tl_gnupg_and_texrunner_wrapper() -> No
     assert "tlmgr install" in dockerfile_text
     assert "latexmk" in dockerfile_text
     assert "biber" in dockerfile_text
+    assert "xetex" in dockerfile_text
+    assert "fontspec" in dockerfile_text
 
     # Dedicated UIDs (app 1000, texrunner 1001) and run-as-texrunner wrapper
     assert "1000" in dockerfile_text and "app" in dockerfile_text

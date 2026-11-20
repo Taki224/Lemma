@@ -32,6 +32,7 @@ class CreateProjectRequest(BaseModel):
 class UpdateProjectSettingsRequest(BaseModel):
     root_tex: str | None = None
     zotero_collection_key: str | None = None
+    tex_engine: str | None = None
 
 
 class RenameProjectRequest(BaseModel):
@@ -110,11 +111,14 @@ async def update_project_settings(
             project_id=project_id,
             root_tex=body.root_tex,
             zotero_collection_key=zotero_arg,
+            tex_engine=body.tex_engine,
         )
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except PermissionError as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     return asdict(meta)
 
 
