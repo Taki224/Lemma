@@ -64,6 +64,21 @@ from app.ai.profile_router import (
         ("which models should i use for the tests", False, "explain"),
         ("i have a single NVIDIA L40S. Does that change anything?", False, "explain"),
         ("Explain how speculative decoding works", False, "explain"),
+        (
+            "Verify if this LaTeX compile issue exists and fix it:\n\n[error] main.tex:12 — Undefined control sequence",
+            False,
+            "fix_latex",
+        ),
+        (
+            "Verify if this LaTeX compile issue exists and fix it:\n\n[warning] main.tex:? — Overfull \\hbox",
+            False,
+            "fix_latex",
+        ),
+        ("Fix this LaTeX error in main.tex", False, "fix_latex"),
+        ("My document fails to compile with Missing $ inserted", False, "fix_latex"),
+        ("Why won't my manuscript compile?", False, "fix_latex"),
+        ("Undefined control sequence \\toprule", False, "fix_latex"),
+        ("Package amsmath Error: \\begin{align} allowed only in paragraph mode.", False, "fix_latex"),
     ],
 )
 def test_route_chat_profile(prompt: str, has_selection: bool, expected: str) -> None:
@@ -97,6 +112,7 @@ def test_parse_routed_profile_reads_the_model_word() -> None:
     assert parse_routed_profile("formal_tone") == "formal_tone"
     assert parse_routed_profile("explain_math") == "explain_math"
     assert parse_routed_profile("explain") == "explain"
+    assert parse_routed_profile("fix_latex") == "fix_latex"
     assert parse_routed_profile("Profile: Proofreading.") is None
     assert parse_routed_profile("writing: draft or revise manuscript prose.") is None
     assert parse_routed_profile("I am not sure") is None

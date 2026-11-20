@@ -326,6 +326,7 @@ const ROUTED_PROFILE_LABELS: Record<string, { short: string; title: string }> = 
   formal_tone: { short: "Formal Tone", title: "Formal Tone Polish" },
   explain_math: { short: "Explain Math", title: "Explain Math Step-by-Step" },
   explain: { short: "Explain", title: "Research Q&A & Discussion" },
+  fix_latex: { short: "Fix LaTeX", title: "LaTeX Error Fixer" },
 };
 
 const DEFAULT_PANEL_H = 260;
