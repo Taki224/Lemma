@@ -1,6 +1,7 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { type ProposedHunkItem } from "./DiffExtension";
 import { ModelSelect } from "./ModelSelect";
+import { useEnabledModels } from "../context/EnabledModelsContext";
 import { ChatBubble } from "./ChatBubble";
 import { ResizeHandle } from "./ResizeHandle";
 import { SanitizedMarkdown, type SanitizedMarkdownProps } from "./SanitizedMarkdown";
@@ -209,6 +210,7 @@ export interface FloatingChatBarProps {
   // Upload a file from the computer into the project root; returns an error message or null.
   onUploadFile?: (file: File) => Promise<string | null>;
   agentRun?: AgentRunController;
+  hasOpenRouterKey?: boolean;
 }
 
 const AUTO_PROFILE_ID = "auto";
@@ -324,6 +326,7 @@ const ROUTED_PROFILE_LABELS: Record<string, { short: string; title: string }> = 
   formal_tone: { short: "Formal Tone", title: "Formal Tone Polish" },
   explain_math: { short: "Explain Math", title: "Explain Math Step-by-Step" },
   explain: { short: "Explain", title: "Research Q&A & Discussion" },
+  fix_latex: { short: "Fix LaTeX", title: "LaTeX Error Fixer" },
 };
 
 const DEFAULT_PANEL_H = 260;
@@ -351,7 +354,9 @@ export function FloatingChatBar({
   dirtyBuffers = {},
   onUploadFile,
   agentRun: agentRunProp,
+  hasOpenRouterKey = true,
 }: FloatingChatBarProps): React.ReactElement {
+  const { models } = useEnabledModels();
   const { minimised, corner, setMinimised, setCorner } = useChatBubble();
   const [selectedModel, setSelectedModel] = useState<string>("");
   const [promptText, setPromptText] = useState<string>("");
@@ -842,11 +847,15 @@ export function FloatingChatBar({
     onNewChat?.();
   };
 
+  const selectedProvider = models.find((m) => m.id === selectedModel)?.provider;
+  const modelAllowed =
+    Boolean(selectedModel) && (hasOpenRouterKey || selectedProvider === "local");
+
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage(null);
     const trimmed = promptText.trim();
-    if (!trimmed || !selectedModel || agentRun.activeRun !== null) return;
+    if (!trimmed || !modelAllowed || agentRun.activeRun !== null) return;
 
     let targetChat = currentChatRef.current;
     const isNewChat = !targetChat;
@@ -939,6 +948,7 @@ export function FloatingChatBar({
               label="OpenRouter Model"
               value={selectedModel}
               onChange={setSelectedModel}
+              openRouterEnabled={hasOpenRouterKey}
             />
           </div>
           <div className="lemma-chat-header-actions">
@@ -1387,7 +1397,7 @@ export function FloatingChatBar({
           className="lemma-btn lemma-btn-primary lemma-btn-small lemma-chat-send"
           aria-label="Send Prompt"
           title={runInAnotherChat ? "A run is already in progress" : undefined}
-          disabled={!selectedModel || agentRun.activeRun !== null}
+          disabled={!modelAllowed || agentRun.activeRun !== null}
         >
           <span aria-hidden="true">↑</span>
         </button>

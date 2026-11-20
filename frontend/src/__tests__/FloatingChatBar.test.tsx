@@ -359,6 +359,35 @@ test("send is disabled when no models are enabled", async () => {
   }
 });
 
+test("OpenRouter model selector is disabled without an OpenRouter key", () => {
+  render(
+    withModels(
+      [makeModel("openai/gpt", "GPT"), { ...makeModel("local-llama", "Local"), provider: "local" }],
+      <FloatingChatBar projectId="p1" hasOpenRouterKey={false} />
+    )
+  );
+
+  const select = screen.getByLabelText(/OpenRouter Model/i);
+  const values = select.querySelectorAll("option").map((o: any) => String(o.props.value));
+  expect(values).toEqual(["local-llama"]);
+  expect(select.props.disabled).toBe(false);
+});
+
+test("OpenRouter model selector is unusable when every model needs a missing key", () => {
+  render(
+    withModels(
+      [makeModel("openai/gpt", "GPT")],
+      <FloatingChatBar projectId="p1" hasOpenRouterKey={false} />
+    )
+  );
+
+  const select = screen.getByLabelText(/OpenRouter Model/i);
+  expect(select.props.disabled).toBe(true);
+  expect(select.querySelectorAll("option").length).toBe(0);
+  expect(Boolean(screen.getByText("Set an OpenRouter API key to choose a model."))).toBe(true);
+  expect(screen.getByRole("button", { name: /Send Prompt/i }).props.disabled).toBe(true);
+});
+
 // --- Task 2.8: minimise to bubble ---------------------------------------
 
 function bubbleHarness() {

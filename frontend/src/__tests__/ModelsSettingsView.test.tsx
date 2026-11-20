@@ -27,10 +27,14 @@ function catalogEntry(id: string, supportsVision = false) {
   };
 }
 
-function renderView(models: EnabledModelInfo[], refresh = vi.fn(async () => {})): any {
+function renderView(
+  models: EnabledModelInfo[],
+  refresh = vi.fn(async () => {}),
+  hasOpenRouterKey = true
+): any {
   render(
     <EnabledModelsContext.Provider value={{ models, loading: false, refresh }}>
-      <ModelsSettingsView csrfToken="csrf-xyz" />
+      <ModelsSettingsView csrfToken="csrf-xyz" hasOpenRouterKey={hasOpenRouterKey} />
     </EnabledModelsContext.Provider>
   );
   return refresh;
@@ -77,6 +81,36 @@ function mockFetch(
       });
     }
     if (String(url) === "/api/settings/smart-routing" && method === "PUT") {
+      const body = options?.body ? JSON.parse(options.body) : {};
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve(body),
+      });
+    }
+    if (String(url) === "/api/settings/web-search" && method === "GET") {
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({ enabled: false }),
+      });
+    }
+    if (String(url) === "/api/settings/web-search" && method === "PUT") {
+      const body = options?.body ? JSON.parse(options.body) : {};
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve(body),
+      });
+    }
+    if (String(url) === "/api/settings/apply-patch" && method === "GET") {
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({ enabled: false }),
+      });
+    }
+    if (String(url) === "/api/settings/apply-patch" && method === "PUT") {
       const body = options?.body ? JSON.parse(options.body) : {};
       return Promise.resolve({
         ok: true,
@@ -503,6 +537,61 @@ describe("ModelsSettingsView", () => {
         )
       ).toBe(true);
     });
+  });
+
+  it("saves the full-file apply-patch toggle", async () => {
+    const fetchMock = mockFetch({ models: [], catalog_available: true });
+    renderView([makeModel("a/model")]);
+
+    const toggle = screen.getByLabelText(
+      "Use apply-patch when the whole file is edited"
+    ) as HTMLInputElement;
+    await waitFor(() => {
+      expect(toggle.hasAttribute("disabled")).toBe(false);
+    });
+    expect(toggle.checked).toBe(false);
+
+    fireEvent.click(toggle);
+    await waitFor(() => {
+      expect(
+        fetchMock.mock.calls.some(
+          (c: any[]) =>
+            c[0] === "/api/settings/apply-patch" &&
+            c[1]?.method === "PUT" &&
+            JSON.parse(c[1].body).enabled === true
+        )
+      ).toBe(true);
+    });
+  });
+
+  it("grays out web search and apply-patch when no OpenRouter key is set", async () => {
+    const fetchMock = mockFetch({ models: [], catalog_available: true });
+    renderView([makeModel("a/model")], vi.fn(async () => {}), false);
+
+    const webSearch = screen.getByLabelText(
+      "Allow the AI assistant to search the web"
+    ) as HTMLInputElement;
+    const applyPatch = screen.getByLabelText(
+      "Use apply-patch when the whole file is edited"
+    ) as HTMLInputElement;
+    await waitFor(() => {
+      expect(webSearch.hasAttribute("disabled")).toBe(true);
+      expect(applyPatch.hasAttribute("disabled")).toBe(true);
+    });
+    expect((screen.getByLabelText("Search model catalog") as HTMLInputElement).disabled).toBe(true);
+    expect((screen.getByLabelText("Model ID") as HTMLInputElement).disabled).toBe(true);
+    expect((screen.getByLabelText("Add Model") as HTMLButtonElement).disabled).toBe(true);
+
+    fireEvent.click(webSearch);
+    fireEvent.click(applyPatch);
+    await new Promise((r) => setTimeout(r, 20));
+    expect(
+      fetchMock.mock.calls.some(
+        (c: any[]) =>
+          (c[0] === "/api/settings/web-search" || c[0] === "/api/settings/apply-patch") &&
+          c[1]?.method === "PUT"
+      )
+    ).toBe(false);
   });
 
   it("adds and removes named GitHub and Zotero keys", async () => {

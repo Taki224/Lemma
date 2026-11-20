@@ -152,6 +152,18 @@ DEFAULT_PROFILES: dict[str, PromptProfile] = {
             + _GROUNDING_RULE
         ),
     ),
+    "fix_latex": PromptProfile(
+        id="fix_latex",
+        name="LaTeX Error Fixer",
+        role="quick_action",
+        system_prompt=(
+            "You are a LaTeX build and diagnostics expert: inspect the manuscript and compile diagnostics to verify whether the reported LaTeX error or warning actually exists in the current source, explain the root cause concisely, and propose the minimal fix. Check the preamble, included files, and earlier lines—not only the reported line—since LaTeX errors often originate earlier. If the issue is already resolved or does not exist in the current files, state that clearly without proposing unnecessary edits."
+            + " "
+            + _LATEX_PRESERVATION_RULES
+            + " "
+            + _GROUNDING_RULE
+        ),
+    ),
     "compile_autofix": PromptProfile(
         id="compile_autofix",
         name="Compile Error Fixer",
