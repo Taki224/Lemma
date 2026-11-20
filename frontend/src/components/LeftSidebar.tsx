@@ -47,7 +47,6 @@ export interface LeftSidebarProps {
   activeProject: ProjectItem | null;
   onOpenProjects?: () => void;
   onUpdateRootTex?: (rootTex: string) => Promise<string | null>;
-  onUpdateTexEngine?: (texEngine: TexEngine) => Promise<string | null>;
   activeFile: string | null;
   files?: FileItem[];
   onSelectFile: (filePath: string) => void;
@@ -180,7 +179,6 @@ export function LeftSidebar({
   activeProject,
   onOpenProjects,
   onUpdateRootTex,
-  onUpdateTexEngine,
   activeFile,
   files = [],
   onSelectFile,
@@ -203,8 +201,6 @@ export function LeftSidebar({
   const [outlineExpanded, setOutlineExpanded] = useState<boolean>(true);
   const [rootTexSaving, setRootTexSaving] = useState<boolean>(false);
   const [rootTexError, setRootTexError] = useState<string | null>(null);
-  const [texEngineSaving, setTexEngineSaving] = useState<boolean>(false);
-  const [texEngineError, setTexEngineError] = useState<string | null>(null);
   const [filterOpen, setFilterOpen] = useState<boolean>(false);
   const [filterText, setFilterText] = useState<string>("");
   const [collapsedDirs, setCollapsedDirs] = useState<Record<string, boolean>>({});
@@ -342,17 +338,6 @@ export function LeftSidebar({
   const rootTex = activeProject?.root_tex || "main.tex";
   const texFiles = files.filter((f) => !f.is_dir && f.path.toLowerCase().endsWith(".tex")).map((f) => f.path);
   if (activeProject && !texFiles.includes(rootTex)) texFiles.unshift(rootTex);
-
-  const texEngine: TexEngine = activeProject?.tex_engine || "pdflatex";
-
-  const changeTexEngine = async (next: TexEngine) => {
-    if (!onUpdateTexEngine || next === texEngine) return;
-    setTexEngineSaving(true);
-    setTexEngineError(null);
-    const error = await onUpdateTexEngine(next);
-    setTexEngineSaving(false);
-    setTexEngineError(error);
-  };
 
   const changeRootTex = async (next: string) => {
     if (!onUpdateRootTex || next === rootTex) return;
@@ -616,25 +601,6 @@ export function LeftSidebar({
         {rootTexError && (
           <p className="lemma-root-tex-error" role="alert">
             {rootTexError}
-          </p>
-        )}
-        {activeProject && (
-          <div className="lemma-root-tex-setting" title="LaTeX engine used to compile the project">
-            <label htmlFor="tex-engine-select">Compiler</label>
-            <select
-              id="tex-engine-select"
-              value={texEngine}
-              disabled={!onUpdateTexEngine || texEngineSaving}
-              onChange={(e) => void changeTexEngine(e.target.value as TexEngine)}
-            >
-              <option value="pdflatex">pdfLaTeX</option>
-              <option value="xelatex">XeLaTeX</option>
-            </select>
-          </div>
-        )}
-        {texEngineError && (
-          <p className="lemma-root-tex-error" role="alert">
-            {texEngineError}
           </p>
         )}
       </div>

@@ -1,8 +1,11 @@
 import React, { useEffect, useRef, useState } from "react";
 import { useEnabledModels } from "../context/EnabledModelsContext";
+import type { ProjectItem, TexEngine } from "./LeftSidebar";
 
 export interface ModelsSettingsViewProps {
   csrfToken: string;
+  activeProject?: ProjectItem | null;
+  onUpdateTexEngine?: (texEngine: TexEngine) => Promise<string | null>;
   onClose?: () => void;
 }
 
@@ -32,9 +35,13 @@ function perMillion(pricePerToken: number): string {
 
 export function ModelsSettingsView({
   csrfToken,
+  activeProject,
+  onUpdateTexEngine,
   onClose,
 }: ModelsSettingsViewProps): React.ReactElement {
   const { models, refresh } = useEnabledModels();
+  const [texEngineSaving, setTexEngineSaving] = useState<boolean>(false);
+  const [texEngineError, setTexEngineError] = useState<string | null>(null);
   const [query, setQuery] = useState<string>("");
   const [results, setResults] = useState<CatalogModel[]>([]);
   const [catalogAvailable, setCatalogAvailable] = useState<boolean>(true);
@@ -927,6 +934,48 @@ export function ModelsSettingsView({
             Add local
           </button>
         </div>
+      </section>
+
+      <section className="lemma-settings-card" data-testid="advanced-settings-section">
+        <h3>Advanced</h3>
+        <p className="lemma-subtext">
+          Choose the LaTeX compiler for{" "}
+          {activeProject ? (
+            <>
+              <strong>{activeProject.name}</strong>. Use XeLaTeX for documents that require <code>fontspec</code> or
+              system Unicode fonts.
+            </>
+          ) : (
+            "the active project. Open a project to change its LaTeX compiler."
+          )}
+        </p>
+        <div className="lemma-smart-routing-row">
+          <label htmlFor="tex-engine-select">LaTeX compiler</label>
+          <select
+            id="tex-engine-select"
+            aria-label="LaTeX compiler"
+            value={activeProject?.tex_engine || "pdflatex"}
+            disabled={!activeProject || !onUpdateTexEngine || texEngineSaving}
+            onChange={(e) => {
+              const next = e.target.value as TexEngine;
+              if (!onUpdateTexEngine || next === (activeProject?.tex_engine || "pdflatex")) return;
+              setTexEngineSaving(true);
+              setTexEngineError(null);
+              void onUpdateTexEngine(next).then((err) => {
+                setTexEngineSaving(false);
+                setTexEngineError(err);
+              });
+            }}
+          >
+            <option value="pdflatex">pdfLaTeX</option>
+            <option value="xelatex">XeLaTeX</option>
+          </select>
+        </div>
+        {texEngineError && (
+          <p className="lemma-error-banner" role="alert" data-testid="tex-engine-error">
+            {texEngineError}
+          </p>
+        )}
       </section>
     </div>
   );
