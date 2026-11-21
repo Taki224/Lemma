@@ -290,7 +290,7 @@ export function LatexEditor({
         EditorState.transactionFilter.of((tr) =>
           readOnlyRef.current && tr.docChanged && !programmaticLoadRef.current ? [] : tr
         ),
-        latex({ enableAutocomplete: false }),
+        latex({ enableAutocomplete: false, enableLinting: false }),
         syntaxHighlighting(latexHighlightStyle),
         citationAutocompleteExtension(
           () => bibEntriesRef.current,
