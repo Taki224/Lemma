@@ -1036,15 +1036,6 @@ export function FloatingChatBar({
             />
           </div>
           <div className="lemma-chat-header-actions">
-            {academicIntegrityMode && (
-              <span
-                className="lemma-integrity-chat-badge"
-                data-testid="chat-integrity-badge"
-                title="Academic Integrity Mode is active for this project"
-              >
-                Integrity
-              </span>
-            )}
             {displayMessages.length > 0 && (
               <button
                 type="button"

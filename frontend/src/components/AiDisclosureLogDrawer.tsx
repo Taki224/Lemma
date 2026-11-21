@@ -62,6 +62,8 @@ export function AiDisclosureLogDrawer({
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [writingFile, setWritingFile] = useState<boolean>(false);
   const [copyingLatex, setCopyingLatex] = useState<boolean>(false);
+  const [previewLatex, setPreviewLatex] = useState<string | null>(null);
+  const [loadingPreview, setLoadingPreview] = useState<boolean>(false);
   const [submittingManual, setSubmittingManual] = useState<boolean>(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [showAddForm, setShowAddForm] = useState<boolean>(false);
@@ -276,31 +278,52 @@ export function AiDisclosureLogDrawer({
     }
   };
 
+  const handleTogglePreview = async () => {
+    if (previewLatex !== null) {
+      setPreviewLatex(null);
+      return;
+    }
+    setLoadingPreview(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/projects/${projectId}/integrity/appendix/preview`, {
+        method: "POST",
+        headers: { "X-CSRF-Token": resolveCsrf() },
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = (await res.json()) as { latex?: string };
+      setPreviewLatex(data.latex || "");
+    } catch {
+      setError("Could not load LaTeX disclosure preview.");
+    } finally {
+      setLoadingPreview(false);
+    }
+  };
+
   return (
     <div
-      className="lemma-modal-backdrop"
-      role="dialog"
-      aria-modal="true"
-      aria-label="AI Disclosure Log"
+      className="lemma-review-studio lemma-models-settings lemma-disclosure-page"
       data-testid="ai-disclosure-log-drawer"
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
     >
-      <div className="lemma-modal-card lemma-disclosure-modal">
-        <div className="lemma-disclosure-header">
-          <div>
-            <h2>AI Disclosure Log</h2>
-            <p className="lemma-disclosure-subtitle">
-              Reproducibility &amp; disclosure trail stored in <code>.ai-audit-log.json</code> ({entries.length}{" "}
-              {entries.length === 1 ? "entry" : "entries"}, {pendingCount} pending human verification).
-            </p>
-          </div>
-          <button type="button" aria-label="Close" className="lemma-modal-close" onClick={onClose}>
-            ×
-          </button>
+      <header className="lemma-review-studio-header">
+        <div className="lemma-review-studio-title-block">
+          <h2>AI Disclosure Log</h2>
+          <span className="lemma-review-studio-subtitle">
+            Reproducibility &amp; disclosure trail in <code>.ai-audit-log.json</code> ({entries.length}{" "}
+            {entries.length === 1 ? "entry" : "entries"}, {verifiedCount} verified, {pendingCount} pending review).
+          </span>
         </div>
+        <button
+          type="button"
+          className="lemma-btn lemma-btn-secondary"
+          aria-label="Back to Editor"
+          onClick={onClose}
+        >
+          Back to Editor
+        </button>
+      </header>
 
+      <section className="lemma-settings-card">
         <div className="lemma-disclosure-toolbar">
           <button
             type="button"
@@ -310,6 +333,14 @@ export function AiDisclosureLogDrawer({
             {showAddForm ? "Cancel Manual Entry" : "+ Add Manual Entry"}
           </button>
           <div className="lemma-disclosure-toolbar-right">
+            <button
+              type="button"
+              className="lemma-btn lemma-btn-secondary lemma-btn-xs"
+              disabled={loadingPreview}
+              onClick={handleTogglePreview}
+            >
+              {loadingPreview ? "Loading…" : previewLatex !== null ? "Hide LaTeX Preview" : "Preview LaTeX"}
+            </button>
             <button
               type="button"
               className="lemma-btn lemma-btn-secondary lemma-btn-xs"
@@ -339,6 +370,10 @@ export function AiDisclosureLogDrawer({
           <div className="lemma-integrity-alert lemma-integrity-alert-success" role="status">
             {statusMessage}
           </div>
+        )}
+
+        {previewLatex !== null && (
+          <pre className="lemma-disclosure-latex-preview">{previewLatex}</pre>
         )}
 
         {showAddForm && (
@@ -430,7 +465,7 @@ export function AiDisclosureLogDrawer({
               ))
           )}
         </div>
-      </div>
+      </section>
     </div>
   );
 }
@@ -523,14 +558,23 @@ function AuditEntryCard({
         </label>
       </div>
 
-      {(entry.affected_files.length > 0 || entry.action_summary) && (
-        <div className="lemma-disclosure-card-summary">
+      {(entry.affected_files.length > 0 || entry.prompt_summary || entry.action_summary) && (
+        <div className="lemma-disclosure-card-details">
           {entry.affected_files.length > 0 && (
-            <span>
-              Files: <code>{entry.affected_files.join(", ")}</code>
-            </span>
+            <div>
+              <strong>Files:</strong> <code>{entry.affected_files.join(", ")}</code>
+            </div>
           )}
-          {entry.action_summary && <span>{entry.action_summary}</span>}
+          {entry.prompt_summary && (
+            <div>
+              <strong>Prompt:</strong> {entry.prompt_summary}
+            </div>
+          )}
+          {entry.action_summary && (
+            <div>
+              <strong>Action:</strong> {entry.action_summary}
+            </div>
+          )}
         </div>
       )}
 
