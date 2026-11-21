@@ -146,6 +146,7 @@ export function App(): React.ReactElement {
   const [toolsModalTab, setToolsModalTab] = useState<"health_check" | "visual_to_latex" | "export" | null>(null);
   const [disclosureLogOpen, setDisclosureLogOpen] = useState<boolean>(false);
   const [integrityLogCount, setIntegrityLogCount] = useState<number>(0);
+  const activeChatModelRef = useRef<{ id: string; name: string; provider: string } | null>(null);
   const handleSelectedModelChange = useCallback(
     (m: { id: string; name: string; provider: string } | null) => {
       activeChatModelRef.current = m;
