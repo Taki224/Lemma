@@ -445,3 +445,57 @@ def test_visual_to_latex_and_explain_math_integrity_metadata(tmp_path: Path) -> 
         assert q_resp.status_code == 200
         assert q_resp.json()["integrity"] is not None
         assert q_resp.json()["integrity"]["tier"] == 1
+
+
+@pytest.mark.asyncio
+async def test_review_studio_injects_integrity_overlay_when_enabled(tmp_path: Path) -> None:
+    from app.ai.prompts import PromptsManager
+    from app.review_studio.text_review import ReviewerAssignment, TextReviewOrchestrator
+
+    settings = bootstrap_data_dir(tmp_path / "data")
+    project_dir = tmp_path / "proj"
+    project_dir.mkdir(parents=True)
+    (project_dir / "main.tex").write_text("\\documentclass{article}\nHello world.\n", encoding="utf-8")
+
+    captured_prompts: list[str] = []
+
+    class _FakeRes:
+        content = "[]"
+        finish_reason = "stop"
+
+    class _FakeOpenRouter:
+        def __init__(self, settings):
+            self.settings = settings
+
+        def estimate_cost_usd(self, model, prompt_tokens, completion_tokens):
+            return 0.0
+
+        def get_daily_spend_usd(self):
+            return 0.0
+
+        async def complete(self, *, model, messages, **kwargs):
+            captured_prompts.append(messages[0]["content"])
+            return _FakeRes()
+
+    prompts_mgr = PromptsManager(settings.prompts_yaml_path)
+    orchestrator = TextReviewOrchestrator(_FakeOpenRouter(settings), prompts_mgr, settings)
+    assignments = [ReviewerAssignment(persona_id="literature_auditor", model="openai/gpt-4o")]
+
+    await orchestrator.run_parallel_reviewers(
+        project_dir=project_dir,
+        root_tex="main.tex",
+        assignments=assignments,
+        academic_integrity_mode=False,
+    )
+    assert len(captured_prompts) == 1
+    assert "Zero Hallucinated Citations" not in captured_prompts[0]
+
+    await orchestrator.run_parallel_reviewers(
+        project_dir=project_dir,
+        root_tex="main.tex",
+        assignments=assignments,
+        academic_integrity_mode=True,
+    )
+    assert len(captured_prompts) == 2
+    assert "Zero Hallucinated Citations" in captured_prompts[1]
+    assert "Critical & Objective Stance" in captured_prompts[1]

@@ -12,6 +12,7 @@ from app.ai.openrouter import OpenRouterClient, SpendCapExceededError
 from app.ai.prompts import PromptsManager
 from app.config import AppSettings
 from app.grounding.pdf_indexer import scan_for_prompt_injection
+from app.integrity.prompts import build_integrity_overlay
 
 
 class ConfirmationRequiredError(RuntimeError):
@@ -255,6 +256,7 @@ class TextReviewOrchestrator:
         confirm_high_cost: bool = False,
         settings: AppSettings | None = None,
         session_id: str | None = None,
+        academic_integrity_mode: bool = False,
     ) -> ReviewRunResult:
         active_settings = settings or self.settings
         estimate = self.estimate_review_run(
@@ -297,6 +299,10 @@ class TextReviewOrchestrator:
                 if profile
                 else f"You are a rigorous academic peer reviewer ({assignment.persona_id})."
             )
+            if academic_integrity_mode:
+                overlay = build_integrity_overlay(profile.role if profile else "reviewer")
+                if overlay:
+                    system_role = f"{system_role}\n\n{overlay}"
 
             prompt_messages = [
                 {
