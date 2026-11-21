@@ -37,6 +37,8 @@ from app.grounding.router import grounding_router
 from app.grounding.scholarly_client import ScholarlyClient
 from app.history.git_snapshots import GitSnapshotService
 from app.history.router import history_router
+from app.integrity.audit_log import AuditLogStore
+from app.integrity.router import integrity_router
 from app.latex.compiler import CompileOrchestrator, CompileReport
 from app.latex.router import latex_router
 from app.latex.sandbox import probe_bwrap_support
@@ -269,6 +271,7 @@ def create_app(
         )
         app.state.visual_inspector = VisualPageInspector()
         app.state.review_report_store = ReviewReportStore()
+        app.state.audit_log_store = AuditLogStore(app.state.project_service)
         try:
             yield
         finally:
@@ -306,6 +309,7 @@ def create_app(
     app.include_router(history_router)
     app.include_router(review_studio_router)
     app.include_router(tools_router)
+    app.include_router(integrity_router)
 
     @app.get("/api/health")
     async def get_health() -> dict[str, str | int]:

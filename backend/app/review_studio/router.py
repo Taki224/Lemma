@@ -144,6 +144,7 @@ async def run_project_review(
             confirm_high_cost=payload.confirm_high_cost,
             settings=settings,
             session_id=review_session_id,
+            academic_integrity_mode=bool(getattr(project, "academic_integrity_mode", False)),
         )
     except ConfirmationRequiredError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

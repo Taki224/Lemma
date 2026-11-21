@@ -52,6 +52,12 @@ from app.ai.reference_context import (
     build_reference_context,
     read_agent_excerpt,
 )
+from app.integrity.classifier import (
+    IntegrityAssessment,
+    classify_hunk,
+    classify_turn,
+)
+from app.integrity.prompts import build_integrity_overlay
 from app.ai.apply_patch import (
     ApplyPatchError,
     apply_v4a_update,
@@ -182,6 +188,7 @@ class ProposedHunk:
     overlap_warnings: list[dict[str, Any]] = field(default_factory=list)
     claim_evidence: list[dict[str, Any]] = field(default_factory=list)
     injection_warning: bool = False
+    integrity: dict[str, Any] | None = None
 
 
 @dataclass(frozen=True)
@@ -227,6 +234,7 @@ class _PreparedTurnContext:
     frozen_ref_buffers: dict[str, str]
     frozen_attachments: list[str]
     turn_index: ProjectIndex | None = None
+    academic_integrity_mode: bool = False
 
 
 @dataclass(frozen=True)
@@ -239,6 +247,7 @@ class ChatTurnResponse:
     profile_id: str
     hunks: list[ProposedHunk]
     context: list[dict[str, str]] = field(default_factory=list)
+    integrity: dict[str, Any] | None = None
 
 
 def _resolve_search_windows(
@@ -666,6 +675,86 @@ def _extract_preamble(text: str) -> str | None:
         return None
     preamble = text[: match.start()].rstrip("\n")
     return preamble or None
+
+
+_HEADING_PREFIX_RE = re.compile(
+    r"\\(?:chapter|section|subsection|subsubsection)\*?(?:\[[^\]]*\])?\{"
+)
+
+
+def _extract_braced_arg(line: str, open_brace_idx: int) -> str:
+    """Extract content inside balanced braces starting at open_brace_idx."""
+    depth = 0
+    chars: list[str] = []
+    for ch in line[open_brace_idx:]:
+        if ch == "{":
+            if depth > 0:
+                chars.append(ch)
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                return "".join(chars).strip()
+            chars.append(ch)
+        else:
+            chars.append(ch)
+    return "".join(chars).strip()
+
+
+def _find_section_hint(file_text: str, start_line: int) -> str:
+    """Find the nearest enclosing LaTeX heading at or above start_line (1-based)."""
+    if not file_text or start_line < 1:
+        return ""
+    lines = file_text.splitlines()
+    idx = min(start_line - 1, len(lines) - 1)
+    while idx >= 0:
+        m = _HEADING_PREFIX_RE.search(lines[idx])
+        if m:
+            hint = _extract_braced_arg(lines[idx], m.end() - 1)
+            if hint:
+                return hint
+        idx -= 1
+    return ""
+
+
+def _apply_integrity_classification(
+    *,
+    prepared: _PreparedTurnContext,
+    user_prompt: str,
+    reply_text: str,
+    hunks: list[ProposedHunk],
+    selection: dict[str, Any] | None = None,
+) -> dict[str, Any] | None:
+    """Attach IntegrityAssessment to each hunk and return turn-level assessment dict."""
+    if not prepared.academic_integrity_mode:
+        return None
+
+    hunk_assessments: list[IntegrityAssessment] = []
+    for hunk in hunks:
+        section_hint = _find_section_hint(prepared.file_text, hunk.start_line)
+        assessment = classify_hunk(
+            profile_id=prepared.profile.id,
+            original_text=hunk.original_text,
+            replacement_text=hunk.replacement_text,
+            cite_keys=hunk.cite_keys,
+            unknown_cite_keys=hunk.unknown_cite_keys,
+            overlap_warnings=hunk.overlap_warnings,
+            section_hint=section_hint,
+        )
+        hunk.integrity = {**assessment.to_dict(), "section_hint": section_hint}
+        hunk_assessments.append(assessment)
+
+    sel_text = selection.get("text") if isinstance(selection, dict) else None
+    has_refs = bool(prepared.frozen_attachments or prepared.ref_context.summaries)
+    turn_assessment = classify_turn(
+        profile_id=prepared.profile.id,
+        user_prompt=user_prompt,
+        reply=reply_text,
+        hunk_assessments=hunk_assessments,
+        has_attachments_or_refs=has_refs,
+        selection_text=str(sel_text) if sel_text else None,
+    )
+    return turn_assessment.to_dict()
 
 
 class ChatService:
@@ -1637,6 +1726,7 @@ class ChatService:
             frozen_ref_buffers=frozen_ref_buffers,
             frozen_attachments=frozen_attachments,
             turn_index=turn_index,
+            academic_integrity_mode=bool(getattr(meta, "academic_integrity_mode", False)),
         )
 
     def _apply_patch_active(self, model: str, prepared: _PreparedTurnContext) -> bool:
@@ -1819,6 +1909,10 @@ class ChatService:
                 else EXPLAIN_MATH_CONTRACT
             )
         system_content = compose_system_prompt(prepared.profile.system_prompt, contract)
+        if prepared.academic_integrity_mode:
+            overlay = build_integrity_overlay(prepared.profile.role)
+            if overlay:
+                system_content = f"{system_content}\n\n{overlay}"
         if prepared.context.mode == "index":
             context_parts = [
                 *prepared.context.parts,
@@ -2148,6 +2242,13 @@ class ChatService:
                 selection=selection,
                 session_id=f"{project_id}:{chat_id}"[:256],
             )
+            integrity_dict = _apply_integrity_classification(
+                prepared=prepared,
+                user_prompt=user_prompt,
+                reply_text=reply_text,
+                hunks=hunks,
+                selection=selection,
+            )
 
             def persist_messages() -> tuple[str, str]:
                 u_id = self.persist_user_message(
@@ -2185,6 +2286,7 @@ class ChatService:
             profile_id=profile_id,
             hunks=hunks,
             context=prepared.turn_context,
+            integrity=integrity_dict,
         )
 
     async def run_agent_turn(
@@ -2408,6 +2510,13 @@ class ChatService:
             working_notes=working_notes,
             search_windows=read_windows,
         )
+        integrity_dict = _apply_integrity_classification(
+            prepared=prepared,
+            user_prompt=user_prompt,
+            reply_text=reply_text,
+            hunks=hunks,
+            selection=selection,
+        )
 
         if hunks:
             pill_rec = await asyncio.to_thread(
@@ -2449,6 +2558,7 @@ class ChatService:
             profile_id=profile_id,
             hunks=hunks,
             context=prepared.turn_context,
+            integrity=integrity_dict,
         )
 
     def attachment_dir(self, project_id: str, chat_id: str) -> Path:

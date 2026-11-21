@@ -1,5 +1,5 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { type ProposedHunkItem } from "./DiffExtension";
+import { type IntegrityAssessmentItem, type ProposedHunkItem } from "./DiffExtension";
 import { ModelSelect } from "./ModelSelect";
 import { useEnabledModels } from "../context/EnabledModelsContext";
 import { ChatBubble } from "./ChatBubble";
@@ -215,6 +215,10 @@ export interface FloatingChatBarProps {
   onUploadFile?: (file: File) => Promise<string | null>;
   agentRun?: AgentRunController;
   hasOpenRouterKey?: boolean;
+  csrfToken?: string;
+  academicIntegrityMode?: boolean;
+  onIntegrityLogUpdated?: () => void;
+  onSelectedModelChange?: (model: { id: string; name: string; provider: string } | null) => void;
 }
 
 const AUTO_PROFILE_ID = "auto";
@@ -361,12 +365,45 @@ export function FloatingChatBar({
   onUploadFile,
   agentRun: agentRunProp,
   hasOpenRouterKey = true,
+  csrfToken,
+  academicIntegrityMode = false,
+  onIntegrityLogUpdated,
+  onSelectedModelChange,
 }: FloatingChatBarProps): React.ReactElement {
   const { models } = useEnabledModels();
   const { minimised, corner, setMinimised, setCorner } = useChatBubble();
   const [selectedModel, setSelectedModel] = useState<string>("");
   const [promptText, setPromptText] = useState<string>("");
   const [messages, setMessages] = useState<ChatMessageItem[]>(initialMessages);
+  const [pendingDisclosure, setPendingDisclosure] = useState<{
+    assessment: IntegrityAssessmentItem;
+    modelId: string;
+    promptSummary: string;
+    chatId: string;
+  } | null>(null);
+  const [loggingDisclosure, setLoggingDisclosure] = useState<boolean>(false);
+  const [disclosureLoggedNotice, setDisclosureLoggedNotice] = useState<boolean>(false);
+
+  const selectedModelInfo = models.find((m) => m.id === selectedModel) ?? null;
+  const isLocalModel = selectedModelInfo?.provider === "local";
+  const academicIntegrityModeRef = useRef(academicIntegrityMode);
+  academicIntegrityModeRef.current = academicIntegrityMode;
+  const selectedModelRef = useRef(selectedModel);
+  selectedModelRef.current = selectedModel;
+  const onSelectedModelChangeRef = useRef(onSelectedModelChange);
+  onSelectedModelChangeRef.current = onSelectedModelChange;
+
+  useEffect(() => {
+    onSelectedModelChangeRef.current?.(
+      selectedModelInfo
+        ? {
+            id: selectedModelInfo.id,
+            name: selectedModelInfo.name,
+            provider: selectedModelInfo.provider || "openrouter",
+          }
+        : null
+    );
+  }, [selectedModelInfo]);
   // The chat the transcript shows. Set from chatId, or locally when the first prompt starts a chat.
   const [currentChatId, setCurrentChatId] = useState<string | null>(chatId ?? null);
   const currentChatRef = useRef<string | null>(chatId ?? null);
@@ -416,6 +453,18 @@ export function FloatingChatBar({
         }
         return merged;
       });
+      if (info.status === "completed" && academicIntegrityMode && info.integrity && info.integrity.tier >= 2) {
+        const hasHunks = Array.isArray(info.hunks) && info.hunks.length > 0;
+        if (!hasHunks) {
+          setDisclosureLoggedNotice(false);
+          setPendingDisclosure({
+            assessment: info.integrity,
+            modelId: info.model || selectedModel,
+            promptSummary: snap?.userPrompt || "",
+            chatId: info.chatId,
+          });
+        }
+      }
       if (info.status === "failed") {
         setErrorMessage(info.error || "Agent run failed");
       }
@@ -453,6 +502,21 @@ export function FloatingChatBar({
     if (runErr) {
       setErrorMessage(runErr);
       return;
+    }
+    if (
+      academicIntegrityModeRef.current &&
+      finished?.status === "completed" &&
+      finished.integrity &&
+      finished.integrity.tier >= 2 &&
+      (!finished.hunks || finished.hunks.length === 0)
+    ) {
+      setDisclosureLoggedNotice(false);
+      setPendingDisclosure({
+        assessment: finished.integrity,
+        modelId: finished.model || selectedModelRef.current,
+        promptSummary: prev.userPrompt || "",
+        chatId: prev.chatId,
+      });
     }
 
     const applyFinishedFallback = () => {
@@ -499,11 +563,17 @@ export function FloatingChatBar({
     currentChatRef.current = chatId;
     if (!alreadyShown) {
       setErrorMessage(null);
+      setPendingDisclosure(null);
+      setDisclosureLoggedNotice(false);
+      setLoggingDisclosure(false);
     }
     if (chatId === null) {
       setMessages([]);
       setReferences([]);
       setAttachments([]);
+      setPendingDisclosure(null);
+      setDisclosureLoggedNotice(false);
+      setLoggingDisclosure(false);
       return;
     }
     if (alreadyShown || typeof fetch !== "function") return;
@@ -966,6 +1036,15 @@ export function FloatingChatBar({
             />
           </div>
           <div className="lemma-chat-header-actions">
+            {academicIntegrityMode && (
+              <span
+                className="lemma-integrity-chat-badge"
+                data-testid="chat-integrity-badge"
+                title="Academic Integrity Mode is active for this project"
+              >
+                Integrity
+              </span>
+            )}
             {displayMessages.length > 0 && (
               <button
                 type="button"
@@ -1197,6 +1276,108 @@ export function FloatingChatBar({
             )}
           </div>
         )}
+
+        {academicIntegrityMode && pendingDisclosure && (
+          <div
+            className={`lemma-integrity-banner tier-${pendingDisclosure.assessment.tier}`}
+            role="status"
+            data-testid="chat-disclosure-banner"
+          >
+            <div className="lemma-integrity-banner-body">
+              <strong>
+                {pendingDisclosure.assessment.tier === 3
+                  ? "Compliance Check (Tier 3):"
+                  : "Disclosure Notice (Tier 2):"}
+              </strong>{" "}
+              {pendingDisclosure.assessment.flags?.has_citations
+                ? "Verify all citations and factual claims against primary sources before compiling. "
+                : "This response affects the substance or phrasing of your work and should be declared in your AI Usage Appendix. "}
+              {pendingDisclosure.assessment.flags?.proportionality_nudge && (
+                <span>Consider reviewing directly to maintain human authorship.</span>
+              )}
+            </div>
+            <div className="lemma-integrity-banner-actions">
+              {disclosureLoggedNotice ? (
+                <span className="lemma-integrity-logged-ok">Logged</span>
+              ) : (
+                <button
+                  type="button"
+                  className="lemma-btn lemma-btn-primary lemma-btn-xs"
+                  disabled={loggingDisclosure}
+                  onClick={async () => {
+                    setLoggingDisclosure(true);
+                    try {
+                      const csrf =
+                        csrfToken ||
+                        (typeof localStorage !== "undefined"
+                          ? localStorage.getItem("lemma_csrf_token") || ""
+                          : "");
+                      const mInfo = models.find((m) => m.id === pendingDisclosure.modelId);
+                      const res = await fetch(`/api/projects/${projectId}/integrity/log`, {
+                        method: "POST",
+                        headers: {
+                          "Content-Type": "application/json",
+                          "X-CSRF-Token": csrf,
+                        },
+                        body: JSON.stringify({
+                          source_surface: "chat",
+                          provider: mInfo?.provider || "openrouter",
+                          model_id: pendingDisclosure.modelId,
+                          model_display_name: mInfo?.name || pendingDisclosure.modelId,
+                          tier: pendingDisclosure.assessment.tier,
+                          category: pendingDisclosure.assessment.category,
+                          purpose: pendingDisclosure.assessment.suggested_purpose,
+                          affected_files: activeFile ? [activeFile] : [],
+                          prompt_summary: pendingDisclosure.promptSummary.slice(0, 300),
+                          action_summary: (pendingDisclosure.assessment.reasons ?? []).join(" "),
+                          outcome: "logged_from_chat",
+                          chat_id: pendingDisclosure.chatId,
+                          flags: pendingDisclosure.assessment.flags,
+                        }),
+                      });
+                      if (!res.ok) {
+                        setErrorMessage("Could not log AI usage to appendix.");
+                        return;
+                      }
+                      setDisclosureLoggedNotice(true);
+                      onIntegrityLogUpdated?.();
+                    } catch {
+                      setErrorMessage("Could not log AI usage to appendix.");
+                    } finally {
+                      setLoggingDisclosure(false);
+                    }
+                  }}
+                >
+                  {loggingDisclosure ? "Logging…" : "Log to AI Appendix"}
+                </button>
+              )}
+              <button
+                type="button"
+                className="lemma-btn lemma-btn-secondary lemma-btn-xs"
+                onClick={() => setPendingDisclosure(null)}
+              >
+                Dismiss
+              </button>
+            </div>
+          </div>
+        )}
+
+        {academicIntegrityMode &&
+          !isLocalModel &&
+          (attachments.length > 0 || references.length > 0 || promptText.length >= 1500) && (
+            <div
+              className="lemma-integrity-banner tier-privacy"
+              role="note"
+              data-testid="chat-privacy-banner"
+            >
+              <div className="lemma-integrity-banner-body">
+                <strong>Privacy Check:</strong> Using external cloud model (
+                <code>{selectedModelInfo?.name || selectedModel || "OpenRouter"}</code>). Ensure no
+                unpublished manuscripts under review, personal human-subject data, or confidential
+                information are sent.
+              </div>
+            </div>
+          )}
 
         <form
           id="chat-prompt-form"

@@ -10,6 +10,8 @@ from typing import Any, Literal
 from app.ai.chat_service import ProposedHunk
 from app.ai.openrouter import OpenRouterClient
 from app.grounding.citation_verifier import BibEntry, verify_citations
+from app.integrity.classifier import classify_hunk
+from app.integrity.prompts import build_integrity_overlay
 
 TargetFormat = Literal["equation", "booktabs", "tikz"]
 
@@ -100,6 +102,7 @@ def lint_generated_latex_snippet(
     start_line: int = 1,
     end_line: int = 1,
     original_text: str = "",
+    academic_integrity_mode: bool = False,
 ) -> VisualLatexResult:
     """Scans generated LaTeX for unsafe commands and verifies citations, returning VisualLatexResult."""
     lint_warnings: list[str] = []
@@ -118,6 +121,18 @@ def lint_generated_latex_snippet(
         for k in verification.unknown_keys:
             lint_warnings.append(f"Unknown citation key: {k}")
 
+    cite_keys = verification.valid_keys + verification.staged_keys
+    integrity_dict: dict[str, Any] | None = None
+    if academic_integrity_mode:
+        assessment = classify_hunk(
+            profile_id="visual_to_latex",
+            original_text=original_text,
+            replacement_text=latex_code,
+            cite_keys=cite_keys,
+            unknown_cite_keys=verification.unknown_keys,
+        )
+        integrity_dict = assessment.to_dict()
+
     hunk = ProposedHunk(
         hunk_id=f"hunk_{pysecrets.token_hex(8)}",
         file_path=file_path,
@@ -126,8 +141,9 @@ def lint_generated_latex_snippet(
         end_line=end_line,
         original_text=original_text,
         replacement_text=latex_code,
-        cite_keys=verification.valid_keys + verification.staged_keys,
+        cite_keys=cite_keys,
         unknown_cite_keys=verification.unknown_keys,
+        integrity=integrity_dict,
     )
 
     return VisualLatexResult(
@@ -157,6 +173,7 @@ async def convert_image_to_latex(
     staged_keys: set[str],
     file_path: str = "main.tex",
     base_etag: str = "",
+    academic_integrity_mode: bool = False,
 ) -> VisualLatexResult:
     """Prompts vision model to convert pasted screenshots into clean LaTeX and passes through linting."""
     format_prompts = {
@@ -166,6 +183,10 @@ async def convert_image_to_latex(
     }
 
     system_prompt = format_prompts.get(target_format, format_prompts["equation"])
+    if academic_integrity_mode:
+        overlay = build_integrity_overlay("quick_action")
+        if overlay:
+            system_prompt = f"{system_prompt}\n\n{overlay}"
     messages = [
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": f"Please convert this image into LaTeX {target_format}."},
@@ -187,5 +208,6 @@ async def convert_image_to_latex(
         target_format=target_format,
         file_path=file_path,
         base_etag=base_etag,
+        academic_integrity_mode=academic_integrity_mode,
     )
     return result

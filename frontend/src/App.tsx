@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from "react";
+import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import {
   LeftSidebar,
   type ChatSummary,
@@ -19,6 +19,7 @@ import { ModelsSettingsView } from "./components/ModelsSettingsView";
 import { ProjectsHub } from "./components/ProjectsHub";
 import { EnabledModelsProvider } from "./context/EnabledModelsContext";
 import { ToolsMenuModal } from "./components/ToolsMenuAndToolbar";
+import { AiDisclosureLogDrawer } from "./components/AiDisclosureLogDrawer";
 import { ResizeHandle } from "./components/ResizeHandle";
 import { usePaneLayout, maxWidthFor, MIN_WIDTHS } from "./hooks/usePaneLayout";
 import { useAgentRun, chatScopeKey } from "./hooks/useAgentRun";
@@ -143,6 +144,100 @@ export function App(): React.ReactElement {
   const [githubOpen, setGithubOpen] = useState<boolean>(false);
   const [githubLinked, setGithubLinked] = useState<boolean>(false);
   const [toolsModalTab, setToolsModalTab] = useState<"health_check" | "visual_to_latex" | "export" | null>(null);
+  const [disclosureLogOpen, setDisclosureLogOpen] = useState<boolean>(false);
+  const [integrityLogCount, setIntegrityLogCount] = useState<number>(0);
+  const handleSelectedModelChange = useCallback(
+    (m: { id: string; name: string; provider: string } | null) => {
+      activeChatModelRef.current = m;
+    },
+    []
+  );
+
+  const loadIntegrityLogCount = (projectId: string) => {
+    if (typeof fetch !== "function") return;
+    fetch(`/api/projects/${projectId}/integrity/log`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data: { entries?: unknown[] } | null) => {
+        if (activeProjectIdRef.current === projectId && Array.isArray(data?.entries)) {
+          setIntegrityLogCount(data.entries.length);
+        }
+      })
+      .catch(() => {});
+  };
+
+  useEffect(() => {
+    if (!authenticated || !activeProject?.project_id) {
+      setIntegrityLogCount(0);
+      return;
+    }
+    loadIntegrityLogCount(activeProject.project_id);
+  }, [authenticated, activeProject?.project_id]);
+
+  const handleToggleAcademicIntegrity = async (enabled: boolean) => {
+    if (!activeProject) return;
+    const projectId = activeProject.project_id;
+    try {
+      const res = await fetch(`/api/projects/${projectId}/settings`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          "X-CSRF-Token": csrfToken || (typeof localStorage !== "undefined" ? localStorage.getItem("lemma_csrf_token") || "" : ""),
+        },
+        body: JSON.stringify({ academic_integrity_mode: enabled }),
+      });
+      if (!res.ok) return;
+      const updated: ProjectItem = await res.json();
+      setProjects((prev) => prev.map((p) => (p.project_id === updated.project_id ? updated : p)));
+      setActiveProject((curr) => (curr?.project_id === updated.project_id ? updated : curr));
+    } catch {
+      // Ignore transient network errors
+    }
+  };
+
+  const handleHunkAccepted = async (hunk: ProposedHunkItem) => {
+    if (!activeProject?.academic_integrity_mode) return;
+    const integrity = hunk.integrity;
+    if (!integrity || integrity.tier < 2) return;
+    const projectId = activeProject.project_id;
+    const modelInfo = activeChatModelRef.current;
+    const sourceSurface = hunk.source_surface || "chat";
+    const provider = hunk.provider || modelInfo?.provider || "openrouter";
+    const modelId = hunk.model_id ?? modelInfo?.id ?? "";
+    const modelDisplayName = hunk.model_display_name || modelInfo?.name || modelId;
+    try {
+      const res = await fetch(`/api/projects/${projectId}/integrity/log`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-CSRF-Token": csrfToken || (typeof localStorage !== "undefined" ? localStorage.getItem("lemma_csrf_token") || "" : ""),
+        },
+        body: JSON.stringify({
+          source_surface: sourceSurface,
+          provider,
+          model_id: modelId,
+          model_display_name: modelDisplayName,
+          tier: integrity.tier,
+          category: integrity.category || "substantive_drafting",
+          purpose: integrity.suggested_purpose || "Substantive manuscript edit",
+          affected_files: hunk.file_path ? [hunk.file_path] : [],
+          section_hint: integrity.section_hint || "",
+          action_summary:
+            integrity.reasons && integrity.reasons.length > 0
+              ? integrity.reasons.join(" ")
+              : `Accepted proposed edit to ${hunk.file_path} (lines ${hunk.start_line}-${hunk.end_line}).`,
+          outcome: "accepted",
+          chat_id: sourceSurface === "chat" ? activeChatIdRef.current : null,
+          hunk_id: hunk.hunk_id,
+          flags: integrity.flags || {},
+        }),
+      });
+      if (res.ok) {
+        loadIntegrityLogCount(projectId);
+      }
+    } catch {
+      // Non-blocking audit log failure
+    }
+  };
   const [toolsOpen, setToolsOpen] = useState<boolean>(false);
   const toolsRef = useRef<HTMLDivElement | null>(null);
 
@@ -996,6 +1091,47 @@ export function App(): React.ReactElement {
                 </button>
               );
             })}
+            <button
+              type="button"
+              className={activeProject?.academic_integrity_mode ? "lemma-tools-item active" : "lemma-tools-item"}
+              aria-label="Toggle Academic Integrity Mode"
+              aria-pressed={Boolean(activeProject?.academic_integrity_mode)}
+              disabled={!activeProject}
+              onClick={() => {
+                if (activeProject) {
+                  void handleToggleAcademicIntegrity(!activeProject.academic_integrity_mode);
+                }
+                setToolsOpen(false);
+              }}
+            >
+              <span className="lemma-tools-item-copy">
+                <span className="lemma-tools-item-label">Academic Integrity Mode</span>
+                <span className="lemma-tools-item-hint">
+                  {activeProject?.academic_integrity_mode ? "Compliance guardrails active" : "Guardrails & AI usage disclosure"}
+                </span>
+              </span>
+              {activeProject?.academic_integrity_mode ? (
+                <span className="lemma-tools-check" aria-hidden="true">
+                  ✓
+                </span>
+              ) : null}
+            </button>
+            <button
+              type="button"
+              className={disclosureLogOpen ? "lemma-tools-item active" : "lemma-tools-item"}
+              aria-label="AI Disclosure Log"
+              aria-pressed={disclosureLogOpen}
+              disabled={!activeProject}
+              onClick={() => {
+                setToolsOpen(false);
+                if (activeProject) setDisclosureLogOpen(true);
+              }}
+            >
+              <span className="lemma-tools-item-copy">
+                <span className="lemma-tools-item-label">AI Disclosure Log ({integrityLogCount})</span>
+                <span className="lemma-tools-item-hint">Review &amp; generate ai_disclosure.tex</span>
+              </span>
+            </button>
           </div>
         </div>
       </div>
@@ -1288,6 +1424,27 @@ export function App(): React.ReactElement {
             onPullCompleted={reloadAfterGithubPull}
           />
 
+          {activeProject && (
+            <AiDisclosureLogDrawer
+              isOpen={disclosureLogOpen}
+              projectId={activeProject.project_id}
+              csrfToken={csrfToken || (typeof localStorage !== "undefined" ? localStorage.getItem("lemma_csrf_token") || "" : "")}
+              onClose={() => setDisclosureLogOpen(false)}
+              onEntriesCountChange={setIntegrityLogCount}
+              onDisclosureFileWritten={() => {
+                const projId = activeProject.project_id;
+                fetch(`/api/projects/${projId}/files`)
+                  .then((res) => (res.ok ? res.json() : null))
+                  .then((data: { files?: FileItem[]; folders?: string[] } | null) => {
+                    if (!data || activeProjectIdRef.current !== projId) return;
+                    setFiles(data.files || []);
+                    if (Array.isArray(data.folders)) setFolders(data.folders);
+                  })
+                  .catch(() => {});
+              }}
+            />
+          )}
+
             {hubOpen && projectsHub}
             <div
               className="lemma-three-pane-grid"
@@ -1541,6 +1698,11 @@ export function App(): React.ReactElement {
                           agentRun.resolveChatHunk(activeProject.project_id, activeChatId, hunkId);
                         }
                       }}
+                      onHunkAccepted={handleHunkAccepted}
+                      academicIntegrityMode={Boolean(activeProject.academic_integrity_mode)}
+                      integrityLogCount={integrityLogCount}
+                      onToggleAcademicIntegrity={handleToggleAcademicIntegrity}
+                      onOpenDisclosureLog={() => setDisclosureLogOpen(true)}
                       zoteroSynced={Boolean(activeFile.endsWith(".bib") && activeProject.zotero_collection_key)}
                       onZoteroSync={
                         activeFile.endsWith(".bib") && activeProject.zotero_collection_key
@@ -1646,6 +1808,12 @@ export function App(): React.ReactElement {
                     onUploadFile={uploadProjectFile}
                     agentRun={agentRun}
                     hasOpenRouterKey={hasOpenRouterKey}
+                    csrfToken={csrfToken}
+                    academicIntegrityMode={Boolean(activeProject?.academic_integrity_mode)}
+                    onIntegrityLogUpdated={() => {
+                      if (activeProject) loadIntegrityLogCount(activeProject.project_id);
+                    }}
+                    onSelectedModelChange={handleSelectedModelChange}
                   />
                 </div>
               )}

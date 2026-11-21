@@ -5687,3 +5687,302 @@ textarea.lemma-chat-prompt-input {
   line-height: 1.5;
   color: var(--text-muted);
 }
+
+/* === Academic Integrity Mode === */
+.lemma-integrity-toolbar-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-right: 4px;
+}
+
+.lemma-integrity-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--bg-elevated, #1e2430);
+  color: var(--text-secondary, #9ca3af);
+  border: 1px solid var(--border-subtle, #2d3545);
+}
+
+.lemma-integrity-toggle.active {
+  background: rgba(16, 185, 129, 0.14);
+  color: #6ee7b7;
+  border-color: rgba(16, 185, 129, 0.45);
+}
+
+.lemma-integrity-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.65;
+}
+
+.lemma-integrity-toggle.active .lemma-integrity-dot {
+  opacity: 1;
+  box-shadow: 0 0 6px rgba(110, 231, 183, 0.7);
+}
+
+.lemma-integrity-chat-badge {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: rgba(16, 185, 129, 0.16);
+  color: #6ee7b7;
+  border: 1px solid rgba(16, 185, 129, 0.4);
+}
+
+.lemma-integrity-banner {
+  margin: 6px 10px 4px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  line-height: 1.4;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.lemma-integrity-banner.tier-2 {
+  background: rgba(245, 158, 11, 0.12);
+  border: 1px solid rgba(245, 158, 11, 0.4);
+  color: #fde68a;
+}
+
+.lemma-integrity-banner.tier-3,
+.lemma-integrity-banner.tier-privacy {
+  background: rgba(239, 68, 68, 0.12);
+  border: 1px solid rgba(239, 68, 68, 0.42);
+  color: #fecaca;
+}
+
+.lemma-integrity-banner-body {
+  flex: 1 1 220px;
+}
+
+.lemma-integrity-banner-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.lemma-integrity-logged-ok {
+  font-size: 11px;
+  font-weight: 600;
+  color: #6ee7b7;
+}
+
+.lemma-disclosure-modal {
+  width: min(760px, 94vw);
+  max-width: 760px;
+  max-height: 86vh;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.lemma-disclosure-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.lemma-disclosure-header h2 {
+  margin: 0;
+}
+
+.lemma-disclosure-subtitle {
+  margin: 4px 0 0;
+  padding-right: 32px;
+  font-size: 12px;
+  color: var(--text-secondary, #9ca3af);
+}
+
+.lemma-disclosure-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
+.lemma-disclosure-toolbar-right {
+  display: inline-flex;
+  gap: 6px;
+}
+
+.lemma-integrity-alert {
+  padding: 8px 10px;
+  border-radius: 6px;
+  font-size: 12px;
+}
+
+.lemma-integrity-alert-error {
+  background: rgba(239, 68, 68, 0.14);
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  color: #fecaca;
+}
+
+.lemma-integrity-alert-success {
+  background: rgba(16, 185, 129, 0.14);
+  border: 1px solid rgba(16, 185, 129, 0.4);
+  color: #a7f3d0;
+}
+
+.lemma-disclosure-add-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--border-subtle, #2d3545);
+}
+
+.lemma-disclosure-form-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: flex-end;
+}
+
+.lemma-disclosure-form-row label:not(.lemma-disclosure-checkbox-label) {
+  flex: 1 1 200px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+}
+
+.lemma-disclosure-form-row input[type="text"],
+.lemma-disclosure-card input[type="text"] {
+  min-width: 0;
+  background: var(--bg-well, #11151d);
+  color: var(--text-primary, #f3f4f6);
+  border: 1px solid var(--border-subtle, #2d3545);
+  border-radius: 4px;
+  padding: 5px 8px;
+  font-size: 12px;
+}
+
+.lemma-disclosure-list {
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-right: 4px;
+}
+
+.lemma-disclosure-empty {
+  font-size: 13px;
+  color: var(--text-secondary, #9ca3af);
+  margin: 12px 0;
+}
+
+.lemma-disclosure-card {
+  border: 1px solid var(--border-subtle, #2d3545);
+  border-radius: 6px;
+  padding: 10px;
+  background: rgba(255, 255, 255, 0.02);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.lemma-disclosure-card-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
+.lemma-disclosure-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+}
+
+.lemma-tier-pill {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+
+.lemma-tier-pill.tier-2 {
+  background: rgba(245, 158, 11, 0.18);
+  color: #fde68a;
+}
+
+.lemma-tier-pill.tier-3 {
+  background: rgba(239, 68, 68, 0.18);
+  color: #fecaca;
+}
+
+.lemma-provider-pill {
+  font-size: 11px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: rgba(148, 163, 184, 0.15);
+  color: #cbd5e1;
+}
+
+.lemma-disclosure-time {
+  color: var(--text-secondary, #9ca3af);
+  font-size: 11px;
+}
+
+.lemma-disclosure-card-fields {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: 8px;
+}
+
+@media (max-width: 600px) {
+  .lemma-disclosure-card-fields {
+    grid-template-columns: 1fr;
+  }
+}
+
+.lemma-disclosure-card-fields label {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 11px;
+  color: var(--text-secondary, #9ca3af);
+}
+
+.lemma-disclosure-card-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  font-size: 11px;
+  color: var(--text-secondary, #9ca3af);
+}
+
+.lemma-disclosure-card-verify {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.lemma-disclosure-card-verify input[type="text"] {
+  flex: 1 1 240px;
+}
+
+.lemma-disclosure-checkbox-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  white-space: nowrap;
+  cursor: pointer;
+}

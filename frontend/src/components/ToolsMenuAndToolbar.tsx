@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { type ProposedHunkItem } from "./DiffExtension";
+import { type IntegrityAssessmentItem, type ProposedHunkItem } from "./DiffExtension";
 import { SanitizedMarkdown } from "./FloatingChatBar";
 import { useEnabledModels } from "../context/EnabledModelsContext";
 
@@ -35,6 +35,7 @@ export function SelectionQuickActionBar({
     title: string;
     content: string;
     claimEvidence?: any[];
+    integrity?: IntegrityAssessmentItem | null;
   } | null>(null);
 
   const handleAction = async (action: "tighten" | "verify_claim" | "formal_tone" | "explain_math") => {
@@ -66,11 +67,19 @@ export function SelectionQuickActionBar({
 
       const data = await res.json();
       if (data.hunk && onHunkProposed) {
-        onHunkProposed(data.hunk);
+        const modelInfo = enabledModels.find((m) => m.id === model);
+        onHunkProposed({
+          ...data.hunk,
+          source_surface: "quick_action",
+          model_id: model,
+          model_display_name: modelInfo?.name || model,
+          provider: modelInfo?.provider || "openrouter",
+        });
       } else if (action === "explain_math") {
         setModalResult({
           title: "Math Explanation",
           content: data.explanation || "No explanation provided.",
+          integrity: data.integrity ?? null,
         });
       } else if (action === "verify_claim") {
         setModalResult({
@@ -146,6 +155,18 @@ export function SelectionQuickActionBar({
       {modalResult && (
         <div className="lemma-toolbar-result-popover" role="dialog" aria-label={modalResult.title}>
           <h3>{modalResult.title}</h3>
+          {modalResult.integrity && modalResult.integrity.tier >= 2 && (
+            <div className={`lemma-integrity-banner tier-${modalResult.integrity.tier}`} role="note">
+              <div className="lemma-integrity-banner-body">
+                <strong>
+                  {modalResult.integrity.tier === 3
+                    ? "Compliance Check (Tier 3):"
+                    : "Disclosure Notice (Tier 2):"}
+                </strong>{" "}
+                {modalResult.integrity.suggested_purpose || "Substantive AI-assisted explanation."}
+              </div>
+            </div>
+          )}
           {modalResult.content && <SanitizedMarkdown content={modalResult.content} />}
           {modalResult.claimEvidence && modalResult.claimEvidence.length > 0 && (
             <div className="lemma-claim-evidence-list">

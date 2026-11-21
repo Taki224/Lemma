@@ -33,6 +33,7 @@ class UpdateProjectSettingsRequest(BaseModel):
     root_tex: str | None = None
     zotero_collection_key: str | None = None
     tex_engine: str | None = None
+    academic_integrity_mode: bool | None = None
 
 
 class RenameProjectRequest(BaseModel):
@@ -112,6 +113,7 @@ async def update_project_settings(
             root_tex=body.root_tex,
             zotero_collection_key=zotero_arg,
             tex_engine=body.tex_engine,
+            academic_integrity_mode=body.academic_integrity_mode,
         )
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc

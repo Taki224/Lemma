@@ -272,6 +272,7 @@ class ChatRunManager:
                     "profile_id": result.profile_id,
                     "hunks": hunks_dicts,
                     "context": result.context,
+                    "integrity": result.integrity,
                 },
             )
         except asyncio.CancelledError:

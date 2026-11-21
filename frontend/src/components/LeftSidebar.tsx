@@ -8,6 +8,7 @@ export interface ProjectItem {
   root_tex: string;
   tex_engine?: TexEngine;
   zotero_collection_key?: string | null;
+  academic_integrity_mode?: boolean;
   updated_at?: string;
 }
 
