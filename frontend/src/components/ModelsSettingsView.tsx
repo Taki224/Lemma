@@ -6,6 +6,9 @@ export interface ModelsSettingsViewProps {
   csrfToken: string;
   activeProject?: ProjectItem | null;
   onUpdateTexEngine?: (texEngine: TexEngine) => Promise<string | null>;
+  onUpdateAcademicIntegrity?: (enabled: boolean) => Promise<string | null>;
+  integrityLogCount?: number;
+  onOpenDisclosureLog?: () => void;
   onClose?: () => void;
   hasOpenRouterKey?: boolean;
 }
@@ -38,12 +41,17 @@ export function ModelsSettingsView({
   csrfToken,
   activeProject,
   onUpdateTexEngine,
+  onUpdateAcademicIntegrity,
+  integrityLogCount = 0,
+  onOpenDisclosureLog,
   onClose,
   hasOpenRouterKey = false,
 }: ModelsSettingsViewProps): React.ReactElement {
   const { models, refresh } = useEnabledModels();
   const [texEngineSaving, setTexEngineSaving] = useState<boolean>(false);
   const [texEngineError, setTexEngineError] = useState<string | null>(null);
+  const [integritySaving, setIntegritySaving] = useState<boolean>(false);
+  const [integrityError, setIntegrityError] = useState<string | null>(null);
   const [query, setQuery] = useState<string>("");
   const [results, setResults] = useState<CatalogModel[]>([]);
   const [catalogAvailable, setCatalogAvailable] = useState<boolean>(true);
@@ -1082,6 +1090,59 @@ export function ModelsSettingsView({
         {texEngineError && (
           <p className="lemma-error-banner" role="alert" data-testid="tex-engine-error">
             {texEngineError}
+          </p>
+        )}
+      </section>
+
+      <section className="lemma-settings-card" data-testid="academic-integrity-settings-section">
+        <h3>Academic Integrity Mode</h3>
+        <p className="lemma-subtext">
+          Optional compliance add-on for{" "}
+          {activeProject ? (
+            <>
+              <strong>{activeProject.name}</strong>. Adds anti-sycophancy and citation-verification
+              guardrails, contextual disclosure notices, and an audit trail in{" "}
+              <code>.ai-audit-log.json</code> for generating <code>ai_disclosure.tex</code>.
+            </>
+          ) : (
+            "the active project. Open a project to configure Academic Integrity Mode."
+          )}
+        </p>
+        <div className="lemma-smart-routing-row">
+          <label className="lemma-disclosure-checkbox-label">
+            <input
+              type="checkbox"
+              aria-label="Academic Integrity Mode"
+              data-testid="integrity-mode-toggle"
+              checked={Boolean(activeProject?.academic_integrity_mode)}
+              disabled={!activeProject || !onUpdateAcademicIntegrity || integritySaving}
+              onChange={(e) => {
+                if (!onUpdateAcademicIntegrity) return;
+                const next = e.target.checked;
+                setIntegritySaving(true);
+                setIntegrityError(null);
+                void onUpdateAcademicIntegrity(next).then((err) => {
+                  setIntegritySaving(false);
+                  setIntegrityError(err);
+                });
+              }}
+            />
+            Enable Academic Integrity Mode
+          </label>
+          {activeProject && onOpenDisclosureLog && (activeProject.academic_integrity_mode || integrityLogCount > 0) && (
+            <button
+              type="button"
+              className="lemma-btn lemma-btn-secondary lemma-btn-xs"
+              data-testid="open-disclosure-log-btn"
+              onClick={onOpenDisclosureLog}
+            >
+              Open AI Disclosure Log ({integrityLogCount})
+            </button>
+          )}
+        </div>
+        {integrityError && (
+          <p className="lemma-error-banner" role="alert" data-testid="integrity-mode-error">
+            {integrityError}
           </p>
         )}
       </section>

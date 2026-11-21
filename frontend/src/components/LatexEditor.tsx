@@ -85,10 +85,6 @@ export interface LatexEditorProps {
   onEditorContext?: (snapshot: EditorContextSnapshot) => void;
   pdfAvailable?: boolean;
   readOnly?: boolean;
-  academicIntegrityMode?: boolean;
-  integrityLogCount?: number;
-  onToggleAcademicIntegrity?: (enabled: boolean) => void;
-  onOpenDisclosureLog?: () => void;
   // Shown for a Zotero-linked bibliography: locks manual editing and shows the Zotero sync banner.
   zoteroSynced?: boolean;
   onZoteroSync?: () => void;
@@ -125,10 +121,6 @@ export function LatexEditor({
   onEditorContext,
   pdfAvailable = true,
   readOnly = false,
-  academicIntegrityMode = false,
-  integrityLogCount = 0,
-  onToggleAcademicIntegrity,
-  onOpenDisclosureLog,
   zoteroSynced = false,
   onZoteroSync,
   onZoteroDisconnect,
@@ -535,38 +527,6 @@ export function LatexEditor({
       <div className="lemma-editor-toolbar">
         <span className="lemma-active-filename">{filePath}</span>
         <div className="lemma-editor-actions">
-          {onToggleAcademicIntegrity && (
-            <div className="lemma-integrity-toolbar-group">
-              <button
-                type="button"
-                className={`lemma-btn lemma-btn-xs lemma-integrity-toggle${academicIntegrityMode ? " active" : ""}`}
-                aria-label="Academic Integrity Mode"
-                aria-pressed={academicIntegrityMode}
-                data-testid="integrity-mode-toggle"
-                title={
-                  academicIntegrityMode
-                    ? "Academic Integrity Mode is ON (click to disable)"
-                    : "Enable Academic Integrity Mode (guardrails & AI usage disclosure log)"
-                }
-                onClick={() => onToggleAcademicIntegrity(!academicIntegrityMode)}
-              >
-                <span className="lemma-integrity-dot" aria-hidden="true" />
-                {academicIntegrityMode ? "Integrity: ON" : "Integrity: OFF"}
-              </button>
-              {academicIntegrityMode && onOpenDisclosureLog && (
-                <button
-                  type="button"
-                  className="lemma-btn lemma-btn-secondary lemma-btn-xs lemma-integrity-log-btn"
-                  aria-label="Open AI Disclosure Log"
-                  data-testid="open-disclosure-log-btn"
-                  title="Review logged AI usage & generate ai_disclosure.tex"
-                  onClick={onOpenDisclosureLog}
-                >
-                  Log ({integrityLogCount})
-                </button>
-              )}
-            </div>
-          )}
           <button
             type="button"
             className="lemma-btn lemma-btn-secondary lemma-btn-small"

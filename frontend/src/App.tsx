@@ -50,7 +50,7 @@ export function App(): React.ReactElement {
   const [hasOpenRouterKey, setHasOpenRouterKey] = useState<boolean>(false);
   const [password, setPassword] = useState<string>("");
   const [loginError, setLoginError] = useState<string | null>(null);
-  const [workspaceMode, setWorkspaceMode] = useState<"editor" | "review_studio" | "history" | "settings">("editor");
+  const [workspaceMode, setWorkspaceMode] = useState<"editor" | "review_studio" | "history" | "settings" | "disclosure_log">("editor");
   const [hubOpen, setHubOpen] = useState<boolean>(true);
 
   const [projects, setProjects] = useState<ProjectItem[]>([]);
@@ -144,7 +144,6 @@ export function App(): React.ReactElement {
   const [githubOpen, setGithubOpen] = useState<boolean>(false);
   const [githubLinked, setGithubLinked] = useState<boolean>(false);
   const [toolsModalTab, setToolsModalTab] = useState<"health_check" | "visual_to_latex" | "export" | null>(null);
-  const [disclosureLogOpen, setDisclosureLogOpen] = useState<boolean>(false);
   const [integrityLogCount, setIntegrityLogCount] = useState<number>(0);
   const activeChatModelRef = useRef<{ id: string; name: string; provider: string } | null>(null);
   const handleSelectedModelChange = useCallback(
@@ -174,8 +173,8 @@ export function App(): React.ReactElement {
     loadIntegrityLogCount(activeProject.project_id);
   }, [authenticated, activeProject?.project_id]);
 
-  const handleToggleAcademicIntegrity = async (enabled: boolean) => {
-    if (!activeProject) return;
+  const handleToggleAcademicIntegrity = async (enabled: boolean): Promise<string | null> => {
+    if (!activeProject) return null;
     const projectId = activeProject.project_id;
     try {
       const res = await fetch(`/api/projects/${projectId}/settings`, {
@@ -186,12 +185,18 @@ export function App(): React.ReactElement {
         },
         body: JSON.stringify({ academic_integrity_mode: enabled }),
       });
-      if (!res.ok) return;
+      if (!res.ok) {
+        const data = await res.json().catch(() => null);
+        return typeof data?.detail === "string"
+          ? data.detail
+          : `Could not update Academic Integrity Mode (HTTP ${res.status}).`;
+      }
       const updated: ProjectItem = await res.json();
       setProjects((prev) => prev.map((p) => (p.project_id === updated.project_id ? updated : p)));
       setActiveProject((curr) => (curr?.project_id === updated.project_id ? updated : curr));
+      return null;
     } catch {
-      // Ignore transient network errors
+      return "Could not update Academic Integrity Mode: network error.";
     }
   };
 
@@ -915,7 +920,7 @@ export function App(): React.ReactElement {
     if (content !== null && content !== fileContent) setEditedSinceCompile(true);
   };
 
-  const openPlace = (place: "editor" | "review_studio" | "history" | "settings") => {
+  const openPlace = (place: "editor" | "review_studio" | "history" | "settings" | "disclosure_log") => {
     setZoteroWizardOpen(false);
     setGithubOpen(false);
     setToolsModalTab(null);
@@ -1023,6 +1028,16 @@ export function App(): React.ReactElement {
                 { place: "editor", label: "Editor", hint: "Manuscript, files, and PDF" },
                 { place: "review_studio", label: "Review Studio", hint: "Peer-review findings" },
                 { place: "history", label: "Version history", aria: "Version History", hint: "Snapshots and restore" },
+                ...(activeProject?.academic_integrity_mode || integrityLogCount > 0
+                  ? [
+                      {
+                        place: "disclosure_log" as const,
+                        label: `AI Disclosure Log (${integrityLogCount})`,
+                        aria: "AI Disclosure Log",
+                        hint: "Review & generate ai_disclosure.tex",
+                      },
+                    ]
+                  : []),
                 { place: "settings", label: "Settings", hint: "Models and keys" },
               ] as const
             ).map(({ place, label, hint, ...rest }) => {
@@ -1092,47 +1107,6 @@ export function App(): React.ReactElement {
                 </button>
               );
             })}
-            <button
-              type="button"
-              className={activeProject?.academic_integrity_mode ? "lemma-tools-item active" : "lemma-tools-item"}
-              aria-label="Toggle Academic Integrity Mode"
-              aria-pressed={Boolean(activeProject?.academic_integrity_mode)}
-              disabled={!activeProject}
-              onClick={() => {
-                if (activeProject) {
-                  void handleToggleAcademicIntegrity(!activeProject.academic_integrity_mode);
-                }
-                setToolsOpen(false);
-              }}
-            >
-              <span className="lemma-tools-item-copy">
-                <span className="lemma-tools-item-label">Academic Integrity Mode</span>
-                <span className="lemma-tools-item-hint">
-                  {activeProject?.academic_integrity_mode ? "Compliance guardrails active" : "Guardrails & AI usage disclosure"}
-                </span>
-              </span>
-              {activeProject?.academic_integrity_mode ? (
-                <span className="lemma-tools-check" aria-hidden="true">
-                  ✓
-                </span>
-              ) : null}
-            </button>
-            <button
-              type="button"
-              className={disclosureLogOpen ? "lemma-tools-item active" : "lemma-tools-item"}
-              aria-label="AI Disclosure Log"
-              aria-pressed={disclosureLogOpen}
-              disabled={!activeProject}
-              onClick={() => {
-                setToolsOpen(false);
-                if (activeProject) setDisclosureLogOpen(true);
-              }}
-            >
-              <span className="lemma-tools-item-copy">
-                <span className="lemma-tools-item-label">AI Disclosure Log ({integrityLogCount})</span>
-                <span className="lemma-tools-item-hint">Review &amp; generate ai_disclosure.tex</span>
-              </span>
-            </button>
           </div>
         </div>
       </div>
@@ -1237,6 +1211,9 @@ export function App(): React.ReactElement {
             return "Could not change the compiler: network error.";
           }
         }}
+        onUpdateAcademicIntegrity={handleToggleAcademicIntegrity}
+        integrityLogCount={integrityLogCount}
+        onOpenDisclosureLog={() => openPlace("disclosure_log")}
         onClose={() => setWorkspaceMode("editor")}
       />
     ) : workspaceMode === "review_studio" ? (
@@ -1298,6 +1275,25 @@ export function App(): React.ReactElement {
               })
               .catch(() => {});
             handleTriggerCompile();
+          }
+        }}
+      />
+    ) : workspaceMode === "disclosure_log" ? (
+      <AiDisclosureLogDrawer
+        isOpen
+        projectId={activeProject?.project_id || "default"}
+        csrfToken={csrfToken || (typeof localStorage !== "undefined" ? localStorage.getItem("lemma_csrf_token") || "" : "")}
+        onClose={() => setWorkspaceMode("editor")}
+        onEntriesCountChange={setIntegrityLogCount}
+        onDisclosureFileWritten={() => {
+          if (activeProject) {
+            fetch(`/api/projects/${activeProject.project_id}/files`)
+              .then((res) => res.json())
+              .then((data: { files?: FileItem[]; folders?: string[] }) => {
+                setFiles(data.files || []);
+                if (Array.isArray(data.folders)) setFolders(data.folders);
+              })
+              .catch(() => {});
           }
         }}
       />
@@ -1424,27 +1420,6 @@ export function App(): React.ReactElement {
             beforeSync={saveDirtyBuffersBeforeSync}
             onPullCompleted={reloadAfterGithubPull}
           />
-
-          {activeProject && (
-            <AiDisclosureLogDrawer
-              isOpen={disclosureLogOpen}
-              projectId={activeProject.project_id}
-              csrfToken={csrfToken || (typeof localStorage !== "undefined" ? localStorage.getItem("lemma_csrf_token") || "" : "")}
-              onClose={() => setDisclosureLogOpen(false)}
-              onEntriesCountChange={setIntegrityLogCount}
-              onDisclosureFileWritten={() => {
-                const projId = activeProject.project_id;
-                fetch(`/api/projects/${projId}/files`)
-                  .then((res) => (res.ok ? res.json() : null))
-                  .then((data: { files?: FileItem[]; folders?: string[] } | null) => {
-                    if (!data || activeProjectIdRef.current !== projId) return;
-                    setFiles(data.files || []);
-                    if (Array.isArray(data.folders)) setFolders(data.folders);
-                  })
-                  .catch(() => {});
-              }}
-            />
-          )}
 
             {hubOpen && projectsHub}
             <div
@@ -1700,10 +1675,6 @@ export function App(): React.ReactElement {
                         }
                       }}
                       onHunkAccepted={handleHunkAccepted}
-                      academicIntegrityMode={Boolean(activeProject.academic_integrity_mode)}
-                      integrityLogCount={integrityLogCount}
-                      onToggleAcademicIntegrity={handleToggleAcademicIntegrity}
-                      onOpenDisclosureLog={() => setDisclosureLogOpen(true)}
                       zoteroSynced={Boolean(activeFile.endsWith(".bib") && activeProject.zotero_collection_key)}
                       onZoteroSync={
                         activeFile.endsWith(".bib") && activeProject.zotero_collection_key
