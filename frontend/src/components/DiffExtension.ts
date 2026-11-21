@@ -16,6 +16,23 @@ export interface ClaimEvidenceItem {
   page_number?: number | null;
 }
 
+export interface IntegrityFlagsItem {
+  has_citations?: boolean;
+  has_unknown_citations?: boolean;
+  has_overlap_warnings?: boolean;
+  substantive_prose?: boolean;
+  proportionality_nudge?: boolean;
+}
+
+export interface IntegrityAssessmentItem {
+  tier: 1 | 2 | 3;
+  category: string;
+  reasons: string[];
+  flags: IntegrityFlagsItem;
+  suggested_purpose: string;
+  section_hint?: string;
+}
+
 export interface ProposedHunkItem {
   hunk_id: string;
   file_path: string;
@@ -29,6 +46,11 @@ export interface ProposedHunkItem {
   overlap_warnings: OverlapWarningItem[];
   claim_evidence: ClaimEvidenceItem[];
   injection_warning: boolean;
+  integrity?: IntegrityAssessmentItem | null;
+  source_surface?: "chat" | "quick_action" | "review_studio" | "manual";
+  model_id?: string;
+  model_display_name?: string;
+  provider?: string;
 }
 
 export const setDiffHunksEffect = StateEffect.define();
@@ -217,7 +239,8 @@ export class InlineDiffHunkWidget extends WidgetType {
     return (
       other.hunk.hunk_id === this.hunk.hunk_id &&
       other.overrideUnknownCitations === this.overrideUnknownCitations &&
-      other.anchored === this.anchored
+      other.anchored === this.anchored &&
+      JSON.stringify(other.hunk.integrity ?? null) === JSON.stringify(this.hunk.integrity ?? null)
     );
   }
 
@@ -241,6 +264,24 @@ export class InlineDiffHunkWidget extends WidgetType {
       badges.push(
         "Prompt-Injection Warning: Untrusted source excerpt contained instruction-override pattern"
       );
+    }
+    const integrity = this.hunk.integrity;
+    if (integrity && integrity.tier >= 2) {
+      if (integrity.flags?.has_citations || integrity.tier === 3) {
+        badges.push(
+          "Compliance Check (Tier 3): Verify all citations and factual claims against primary sources before compiling."
+        );
+      }
+      if (integrity.flags?.substantive_prose || integrity.tier === 2) {
+        badges.push(
+          "Disclosure Notice (Tier 2): Substantive content/phrasing change — will auto-log to AI Usage Appendix on accept."
+        );
+      }
+      if (integrity.flags?.proportionality_nudge) {
+        badges.push(
+          "Proportionality Check: Large generated passage — review critically and ensure human authorship."
+        );
+      }
     }
 
     const citationCheckboxes =

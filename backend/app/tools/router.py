@@ -139,6 +139,8 @@ async def visual_to_latex(
     openrouter = getattr(request.app.state, "openrouter_client", None)
     bib_entries, staged_keys = await asyncio.to_thread(_load_bib_and_staged_keys, project_dir, db, project_id)
 
+    integrity_enabled = bool(getattr(project, "academic_integrity_mode", False))
+
     if payload.csv_text is not None:
         table_code = convert_csv_to_booktabs(
             csv_text=payload.csv_text,
@@ -154,6 +156,7 @@ async def visual_to_latex(
             base_etag=payload.base_etag,
             start_line=payload.start_line,
             end_line=payload.end_line,
+            academic_integrity_mode=integrity_enabled,
         )
         data = asdict(res)
         if res.hunk:
@@ -178,6 +181,7 @@ async def visual_to_latex(
                 staged_keys=staged_keys,
                 file_path=payload.file_path,
                 base_etag=payload.base_etag,
+                academic_integrity_mode=integrity_enabled,
             )
         except ModelNotAllowedError as exc:
             raise HTTPException(status_code=403, detail=str(exc)) from exc
@@ -219,6 +223,7 @@ async def selection_quick_action(
             bib_entries=bib_entries,
             staged_keys=staged_keys,
             prompts_manager=getattr(request.app.state, "prompts_manager", None),
+            academic_integrity_mode=bool(getattr(project, "academic_integrity_mode", False)),
         )
     except ModelNotAllowedError as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc

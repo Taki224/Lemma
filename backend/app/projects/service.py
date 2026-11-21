@@ -120,6 +120,7 @@ class ProjectMetadata:
     created_at: str
     updated_at: str
     tex_engine: TexEngine = "pdflatex"
+    academic_integrity_mode: bool = False
 
 
 @dataclass(frozen=True)
@@ -270,7 +271,7 @@ class ProjectService:
         with closing(self.db.get_connection()) as conn:
             rows = conn.execute(
                 """
-                SELECT project_id, name, root_tex, tex_engine, zotero_collection_key, created_at, updated_at
+                SELECT project_id, name, root_tex, tex_engine, zotero_collection_key, academic_integrity_mode, created_at, updated_at
                 FROM projects
                 ORDER BY updated_at DESC, created_at DESC;
                 """
@@ -284,6 +285,7 @@ class ProjectService:
                 created_at=str(r["created_at"]),
                 updated_at=str(r["updated_at"]),
                 tex_engine=str(r["tex_engine"] or "pdflatex"),  # type: ignore[arg-type]
+                academic_integrity_mode=bool(r["academic_integrity_mode"]),
             )
             for r in rows
         ]
@@ -292,7 +294,7 @@ class ProjectService:
         with closing(self.db.get_connection()) as conn:
             row = conn.execute(
                 """
-                SELECT project_id, name, root_tex, tex_engine, zotero_collection_key, created_at, updated_at
+                SELECT project_id, name, root_tex, tex_engine, zotero_collection_key, academic_integrity_mode, created_at, updated_at
                 FROM projects
                 WHERE project_id = ?;
                 """,
@@ -308,6 +310,7 @@ class ProjectService:
             created_at=str(row["created_at"]),
             updated_at=str(row["updated_at"]),
             tex_engine=str(row["tex_engine"] or "pdflatex"),  # type: ignore[arg-type]
+            academic_integrity_mode=bool(row["academic_integrity_mode"]),
         )
 
     def update_project_settings(
@@ -316,6 +319,7 @@ class ProjectService:
         root_tex: str | None = None,
         zotero_collection_key: str | None | object = _UNSET,
         tex_engine: str | None = None,
+        academic_integrity_mode: bool | None = None,
     ) -> ProjectMetadata:
         current = self.get_project(project_id)
         project_dir = self.get_project_dir(project_id)
@@ -340,15 +344,21 @@ class ProjectService:
             new_zotero_key = None
         else:
             new_zotero_key = str(zotero_collection_key).strip()
+
+        new_integrity_mode = (
+            bool(academic_integrity_mode)
+            if academic_integrity_mode is not None
+            else current.academic_integrity_mode
+        )
         now_iso = datetime.now(timezone.utc).isoformat()
         with closing(self.db.get_connection()) as conn:
             conn.execute(
                 """
                 UPDATE projects
-                SET root_tex = ?, tex_engine = ?, zotero_collection_key = ?, updated_at = ?
+                SET root_tex = ?, tex_engine = ?, zotero_collection_key = ?, academic_integrity_mode = ?, updated_at = ?
                 WHERE project_id = ?;
                 """,
-                (new_root_tex, new_tex_engine, new_zotero_key, now_iso, project_id),
+                (new_root_tex, new_tex_engine, new_zotero_key, int(new_integrity_mode), now_iso, project_id),
             )
         return self.get_project(project_id)
 
@@ -398,10 +408,19 @@ class ProjectService:
             with closing(self.db.get_connection()) as conn:
                 conn.execute(
                     """
-                    INSERT INTO projects (project_id, name, root_tex, tex_engine, zotero_collection_key, created_at, updated_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?);
+                    INSERT INTO projects (project_id, name, root_tex, tex_engine, zotero_collection_key, academic_integrity_mode, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?);
                     """,
-                    (slug, clean_name, source.root_tex, source.tex_engine, source.zotero_collection_key, now_iso, now_iso),
+                    (
+                        slug,
+                        clean_name,
+                        source.root_tex,
+                        source.tex_engine,
+                        source.zotero_collection_key,
+                        int(source.academic_integrity_mode),
+                        now_iso,
+                        now_iso,
+                    ),
                 )
         except Exception:
             shutil.rmtree(target_dir, ignore_errors=True)

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ChatContextEntry } from "../components/FloatingChatBar";
-import type { ProposedHunkItem } from "../components/DiffExtension";
+import type { IntegrityAssessmentItem, ProposedHunkItem } from "../components/DiffExtension";
 
 export interface AgentStatusLine {
   messageId?: string;
@@ -53,9 +53,11 @@ export interface AgentRunFinishedInfo {
   chatId: string;
   status: "completed" | "stopped" | "failed";
   reply?: string;
+  model?: string;
   profileId?: string;
   context?: ChatContextEntry[];
   hunks?: ProposedHunkItem[];
+  integrity?: IntegrityAssessmentItem | null;
   error?: string;
 }
 
@@ -226,11 +228,16 @@ export function useAgentRun(options: UseAgentRunOptions = {}): AgentRunControlle
           chatId,
           status: "completed",
           reply: typeof payload.reply === "string" ? payload.reply : undefined,
+          model: typeof payload.model === "string" ? payload.model : undefined,
           profileId: typeof payload.profile_id === "string" ? payload.profile_id : undefined,
           context: Array.isArray(payload.context)
             ? (payload.context as ChatContextEntry[])
             : undefined,
           hunks,
+          integrity:
+            payload.integrity && typeof payload.integrity === "object"
+              ? (payload.integrity as IntegrityAssessmentItem)
+              : null,
         };
         setLastFinishedRun({ ...finishedInfo, runId });
         onRunFinishedRef.current?.(finishedInfo);

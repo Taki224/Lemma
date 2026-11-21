@@ -26,6 +26,8 @@ from app.grounding.overlap_checker import (
     extract_claim_evidence,
 )
 from app.grounding.pdf_indexer import IndexedPdfChunk, scan_for_prompt_injection
+from app.integrity.classifier import classify_hunk, classify_turn
+from app.integrity.prompts import build_integrity_overlay
 
 logger = logging.getLogger(__name__)
 
@@ -40,6 +42,7 @@ class QuickActionResult:
     claim_evidence: list[dict[str, Any]] = field(default_factory=list)
     injection_warning: bool = False
     warning_message: str | None = None
+    integrity: dict[str, Any] | None = None
 
 
 def _strip_markdown_fences(content: str) -> str:
@@ -72,6 +75,7 @@ async def run_selection_quick_action(
     bib_entries: dict[str, BibEntry] | None = None,
     staged_keys: set[str] | None = None,
     prompts_manager: PromptsManager | None = None,
+    academic_integrity_mode: bool = False,
 ) -> QuickActionResult:
     """Executes an inline academic quick action (tighten, formal tone, verify claim, explain math)."""
     project_dir = Path(project_dir).resolve()
@@ -105,9 +109,12 @@ async def run_selection_quick_action(
         if prompts_manager is None:
             raise RuntimeError("PromptsManager is required for text editing actions.")
 
-        system_prompt = compose_system_prompt(
-            prompts_manager.get_profile(action).system_prompt, QUICK_EDIT_CONTRACT
-        )
+        profile = prompts_manager.get_profile(action)
+        system_prompt = compose_system_prompt(profile.system_prompt, QUICK_EDIT_CONTRACT)
+        if academic_integrity_mode:
+            overlay = build_integrity_overlay(profile.role)
+            if overlay:
+                system_prompt = f"{system_prompt}\n\n{overlay}"
         messages = [
             {"role": "system", "content": system_prompt},
             {
@@ -195,6 +202,18 @@ async def run_selection_quick_action(
             for m in overlap_matches
         ]
 
+        integrity_dict: dict[str, Any] | None = None
+        if academic_integrity_mode:
+            assessment = classify_hunk(
+                profile_id=action,
+                original_text=selected_text,
+                replacement_text=replacement_text,
+                cite_keys=verification.valid_keys + verification.staged_keys,
+                unknown_cite_keys=verification.unknown_keys,
+                overlap_warnings=overlap_warnings,
+            )
+            integrity_dict = assessment.to_dict()
+
         hunk = ProposedHunk(
             hunk_id=f"hunk_{pysecrets.token_hex(8)}",
             file_path=file_path,
@@ -207,12 +226,14 @@ async def run_selection_quick_action(
             unknown_cite_keys=verification.unknown_keys,
             overlap_warnings=overlap_warnings,
             injection_warning=injection_warning,
+            integrity=integrity_dict,
         )
 
         return QuickActionResult(
             action=action,
             hunk=hunk,
             injection_warning=injection_warning,
+            integrity=integrity_dict,
         )
 
     elif action == "verify_claim":
@@ -248,9 +269,14 @@ async def run_selection_quick_action(
         if prompts_manager is None:
             raise RuntimeError("PromptsManager is required for math explanation.")
 
+        explain_profile = prompts_manager.get_profile("explain_math")
         system_prompt = compose_system_prompt(
-            prompts_manager.get_profile("explain_math").system_prompt, EXPLAIN_MATH_CONTRACT
+            explain_profile.system_prompt, EXPLAIN_MATH_CONTRACT
         )
+        if academic_integrity_mode:
+            overlay = build_integrity_overlay(explain_profile.role)
+            if overlay:
+                system_prompt = f"{system_prompt}\n\n{overlay}"
         messages = [
             {"role": "system", "content": system_prompt},
             {
@@ -266,10 +292,20 @@ async def run_selection_quick_action(
             )
         if not res.content.strip():
             raise OpenRouterError("Model returned an empty explanation.")
+        integrity_dict: dict[str, Any] | None = None
+        if academic_integrity_mode:
+            assessment = classify_turn(
+                profile_id="explain_math",
+                user_prompt=selected_text,
+                reply=res.content,
+                selection_text=selected_text,
+            )
+            integrity_dict = assessment.to_dict()
         return QuickActionResult(
             action="explain_math",
             explanation=res.content,
             injection_warning=injection_warning,
+            integrity=integrity_dict,
         )
 
     raise ValueError(f"Unknown quick action: {action}")
