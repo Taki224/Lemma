@@ -26,10 +26,12 @@ _INLINE_MATH_RE = re.compile(r"(?<!\\)\$[^$\n]+\$|\\\(.*?\\\)")
 _BRACES_AND_TABLE_RE = re.compile(r"[{}\[\]&~^]|\\\\")
 _WORD_RE = re.compile(r"[A-Za-z][A-Za-z0-9'-]*")
 
-_SUMMARIZE_OR_TRANSLATE_RE = re.compile(
-    r"\b(summariz\w*|summaris\w*|translat\w*|paraphras\w*|rephrase\w*|draft\b|write\s+(?:a|the|this)\s+(?:section|paragraph|chapter|introduction|abstract|conclusion|methodology|review))\b",
+_DRAFT_OR_TRANSLATE_RE = re.compile(
+    r"\b(translat\w*|paraphras\w*|rephrase\w*|draft\b|write\s+(?:a|the|this)\s+(?:section|paragraph|chapter|introduction|abstract|conclusion|methodology|review))\b",
     re.IGNORECASE,
 )
+_SUMMARIZE_RE = re.compile(r"\b(summariz\w*|summaris\w*)\b", re.IGNORECASE)
+_ADVISORY_ONLY_PROFILES = frozenset({"explain", "explain_math", "verify_claim", "fix_latex", "compile_autofix"})
 
 # Thresholds for distinguishing minor proofreading vs. substantive prose edits
 _MINOR_NET_WORD_THRESHOLD = 25
@@ -297,15 +299,26 @@ def classify_turn(
     tier: IntegrityTier = 1
     category = "advisory_qa"
 
-    asks_substantive = bool(_SUMMARIZE_OR_TRANSLATE_RE.search(user_prompt or ""))
-    if (
+    asks_draft_or_translate = bool(_DRAFT_OR_TRANSLATE_RE.search(user_prompt or ""))
+    asks_summarize = bool(_SUMMARIZE_RE.search(user_prompt or ""))
+    summarizing_external_source = has_attachments_or_refs and asks_summarize
+
+    # Advisory/explain replies that don't propose edits to the thesis stay Tier 1 unless
+    # the user explicitly asked to draft/translate prose or summarize an attached/referenced source.
+    is_substantive_chat = (
         len(reply_words) >= _CHAT_SUBSTANTIVE_REPLY_WORDS
-        and (pid in {"writing", "synthesis", "formal_tone"} or has_attachments_or_refs or asks_substantive)
-    ):
+        and (
+            pid in {"writing", "synthesis", "formal_tone"}
+            or asks_draft_or_translate
+            or summarizing_external_source
+            or (has_attachments_or_refs and pid not in _ADVISORY_ONLY_PROFILES)
+        )
+    )
+    if is_substantive_chat:
         tier = 2
         substantive_prose = True
         category = "substantive_chat_assistance"
-        if has_attachments_or_refs and asks_substantive:
+        if summarizing_external_source:
             reasons.append("Summarized or synthesized referenced/attached source material.")
         else:
             reasons.append(f"Generated substantive prose/analysis in chat ({len(reply_words)} words).")
@@ -313,8 +326,7 @@ def classify_turn(
     # Proportionality nudge: asking to summarize very short input
     if (
         selection_text
-        and asks_substantive
-        and "summar" in (user_prompt or "").lower()
+        and asks_summarize
         and 0 < len(_prose_words(selection_text)) < _SHORT_SUMMARY_INPUT_WORDS
     ):
         proportionality_nudge = True

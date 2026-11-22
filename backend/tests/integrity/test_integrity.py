@@ -106,6 +106,16 @@ def test_classifier_turn_chat_only() -> None:
     )
     assert t1.tier == 1
 
+    # Explaining/summarizing the user's own file in explain mode with no edits -> Tier 1
+    explain_reply = " ".join(["explanation"] * 75)
+    t1_explain_summary = classify_turn(
+        profile_id="explain",
+        user_prompt="can you summarise in 2 sentences why this model pair is perfect?",
+        reply=explain_reply,
+        has_attachments_or_refs=False,
+    )
+    assert t1_explain_summary.tier == 1
+
     # Substantive chat summary of attached paper -> Tier 2
     long_summary = " ".join(["summary"] * 75)
     t2 = classify_turn(
