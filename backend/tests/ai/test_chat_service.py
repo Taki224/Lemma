@@ -3223,6 +3223,153 @@ async def test_apply_patch_discards_a_diff_that_does_not_match(tmp_path: Path) -
 
 
 @pytest.mark.asyncio
+async def test_apply_patch_falls_back_when_responses_returns_only_reasoning(
+    tmp_path: Path,
+) -> None:
+    captured: list[dict] = []
+    reply = "<<<<<<< SEARCH\nomega\n=======\nomega!\n>>>>>>> REPLACE\n"
+    _, _, project_service, chat_service, http_client = _setup_services(
+        tmp_path,
+        "",
+        responder=_routed_responder(
+            captured,
+            responses_payload={
+                "id": "resp_1",
+                "status": "completed",
+                "output": [{"type": "reasoning", "summary": []}],
+                "usage": {"input_tokens": 10, "output_tokens": 50},
+            },
+            responses_status=200,
+            chat_text=reply,
+        ),
+    )
+    try:
+        chat_service.settings.apply_patch_enabled = True
+        meta = project_service.create_project("ReasoningOnly")
+        project_service.write_file(
+            project_id=meta.project_id,
+            rel_path="main.tex",
+            content="alpha\nomega\n",
+            expected_etag=None,
+        )
+        chat = chat_service.create_chat(meta.project_id, title="ReasoningOnly")
+        turn = await chat_service.send_message(
+            project_id=meta.project_id,
+            chat_id=chat.chat_id,
+            user_prompt="Change the last line.",
+            model="anthropic/claude-3.7-sonnet",
+            profile_id="writing",
+            active_file="main.tex",
+        )
+        assert [item["path"] for item in captured] == [
+            "/api/v1/responses",
+            "/api/v1/chat/completions",
+        ]
+        assert len(turn.hunks) == 1
+        assert turn.hunks[0].replacement_text == "omega!"
+    finally:
+        await http_client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_apply_patch_falls_back_when_responses_status_failed(
+    tmp_path: Path,
+) -> None:
+    captured: list[dict] = []
+    reply = "<<<<<<< SEARCH\nomega\n=======\nomega!\n>>>>>>> REPLACE\n"
+    _, _, project_service, chat_service, http_client = _setup_services(
+        tmp_path,
+        "",
+        responder=_routed_responder(
+            captured,
+            responses_payload={
+                "id": "resp_failed",
+                "status": "failed",
+                "error": {"message": "provider failed"},
+                "output": [{"type": "reasoning", "summary": []}],
+                "usage": {"input_tokens": 10, "output_tokens": 5},
+            },
+            responses_status=200,
+            chat_text=reply,
+        ),
+    )
+    try:
+        chat_service.settings.apply_patch_enabled = True
+        meta = project_service.create_project("StatusFailed")
+        project_service.write_file(
+            project_id=meta.project_id,
+            rel_path="main.tex",
+            content="alpha\nomega\n",
+            expected_etag=None,
+        )
+        chat = chat_service.create_chat(meta.project_id, title="StatusFailed")
+        turn = await chat_service.send_message(
+            project_id=meta.project_id,
+            chat_id=chat.chat_id,
+            user_prompt="Change the last line.",
+            model="anthropic/claude-3.7-sonnet",
+            profile_id="writing",
+            active_file="main.tex",
+        )
+        assert [item["path"] for item in captured] == [
+            "/api/v1/responses",
+            "/api/v1/chat/completions",
+        ]
+        assert len(turn.hunks) == 1
+        assert turn.hunks[0].replacement_text == "omega!"
+    finally:
+        await http_client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_apply_patch_empty_fallback_reports_empty_response(
+    tmp_path: Path,
+) -> None:
+    captured: list[dict] = []
+    _, _, project_service, chat_service, http_client = _setup_services(
+        tmp_path,
+        "",
+        responder=_routed_responder(
+            captured,
+            responses_payload={
+                "id": "resp_empty",
+                "status": "completed",
+                "output": [],
+            },
+            responses_status=200,
+            chat_text="",
+        ),
+    )
+    try:
+        chat_service.settings.apply_patch_enabled = True
+        meta = project_service.create_project("EmptyFallback")
+        project_service.write_file(
+            project_id=meta.project_id,
+            rel_path="main.tex",
+            content="alpha\nomega\n",
+            expected_etag=None,
+        )
+        chat = chat_service.create_chat(meta.project_id, title="EmptyFallback")
+        turn = await chat_service.send_message(
+            project_id=meta.project_id,
+            chat_id=chat.chat_id,
+            user_prompt="Change the last line.",
+            model="anthropic/claude-3.7-sonnet",
+            profile_id="writing",
+            active_file="main.tex",
+        )
+        assert [item["path"] for item in captured] == [
+            "/api/v1/responses",
+            "/api/v1/chat/completions",
+        ]
+        assert turn.hunks == []
+        assert turn.reply.strip()
+        assert "empty response" in turn.reply.lower()
+    finally:
+        await http_client.aclose()
+
+
+@pytest.mark.asyncio
 async def test_run_agent_turn_recovers_when_step_fails_with_finish_error(
     tmp_path: Path,
 ) -> None:

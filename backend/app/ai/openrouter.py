@@ -903,12 +903,14 @@ def _parse_responses_payload(
 ) -> tuple[str, list[ApplyPatchOperation], int, int, dict[str, Any], str | None]:
     texts: list[str] = []
     operations: list[ApplyPatchOperation] = []
+    output_types: list[str] = []
     output = data.get("output")
     if isinstance(output, list):
         for item in output:
             if not isinstance(item, dict):
                 continue
             item_type = str(item.get("type") or "")
+            output_types.append(item_type)
             if item_type in {"message", "output_message"}:
                 texts.extend(_response_text_parts(item))
                 continue
@@ -940,4 +942,29 @@ def _parse_responses_payload(
     )
     status = data.get("status")
     finish_reason = status.strip().lower() if isinstance(status, str) and status.strip() else None
+
+    error = data.get("error")
+    if finish_reason == "failed" or (error and not content_text and not operations):
+        detail = error or data.get("incomplete_details") or f"status={status!r}"
+        logger.warning(
+            "OpenRouter responses failed (id=%s, model=%s, status=%s, output_types=%s, error=%s)",
+            data.get("id"),
+            data.get("model"),
+            status,
+            output_types,
+            error,
+        )
+        raise OpenRouterError(f"OpenRouter responses failed: {detail}")
+
+    if not content_text and not operations:
+        logger.warning(
+            "OpenRouter responses returned no message text or apply_patch_call "
+            "(id=%s, model=%s, status=%s, incomplete_details=%s, output_types=%s)",
+            data.get("id"),
+            data.get("model"),
+            status,
+            data.get("incomplete_details"),
+            output_types,
+        )
+
     return content_text, operations, actual_prompt, actual_completion, usage, finish_reason

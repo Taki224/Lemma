@@ -1754,7 +1754,7 @@ class ChatService:
     ) -> tuple[str, list[ProposedHunk]]:
         if self._apply_patch_active(model, prepared):
             try:
-                return await self._reply_from_apply_patch(
+                patch_outcome = await self._reply_from_apply_patch(
                     project_id=project_id,
                     model=model,
                     prepared=prepared,
@@ -1763,6 +1763,13 @@ class ChatService:
                     session_id=session_id,
                     working_notes=working_notes,
                     search_windows=search_windows,
+                )
+                if patch_outcome is not None:
+                    return patch_outcome
+                logger.warning(
+                    "apply_patch returned no text or operations for model=%s; "
+                    "falling back to search/replace",
+                    model,
                 )
             except OpenRouterError as exc:
                 logger.warning(
@@ -1800,7 +1807,7 @@ class ChatService:
         session_id: str,
         working_notes: list[str] | None,
         search_windows: list[tuple[int, int]] | None,
-    ) -> tuple[str, list[ProposedHunk]]:
+    ) -> tuple[str, list[ProposedHunk]] | None:
         del session_id  # Responses calls do not send the chat-completions session id.
         messages = self._build_final_chat_messages(
             prepared,
@@ -1813,6 +1820,8 @@ class ChatService:
             messages=messages,
             max_tokens=CHAT_FINAL_MAX_TOKENS,
         )
+        if not result.operations and not result.content.strip():
+            return None
         reply_text, hunks, _applied = self._hunks_from_apply_patch(
             project_id=project_id,
             prepared=prepared,
@@ -1890,6 +1899,8 @@ class ChatService:
         reply = result.content.strip()
         if not reply and hunks:
             reply = f"Proposed edits to {prepared.resolved_path}."
+        if result.finish_reason == "incomplete" and not hunks and reply:
+            notes.append("_Note: The response was cut off before completing the edit._")
         if notes:
             joined = "\n\n".join(notes)
             reply = f"{reply}\n\n{joined}" if reply else joined
