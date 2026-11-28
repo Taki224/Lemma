@@ -86,7 +86,6 @@ Settings can be provided via `.env` / `.env.local` or container environment vari
 | `OPENROUTER_API_KEY` | — | OpenRouter API key for AI chat, model catalog, and Review Studio |
 | `LOCAL_MODEL_BASE_URL` | `http://localhost:11434/v1` | Base URL for a local / self-hosted OpenAI-compatible model server (e.g., Ollama, vLLM, LM Studio) |
 | `LOCAL_API_KEY` | — | Optional API key for the local / self-hosted model server |
-| `ZOTERO_API_KEY` | — | Optional Zotero API key for library access |
 | `UNPAYWALL_EMAIL` | — | Optional email for Unpaywall open-access PDF lookups |
 | `COMPILE_TIMEOUT_SECONDS` | `60` | Maximum seconds per LaTeX compilation |
 | `COMPILE_MEMORY_LIMIT_MB` | `1024` | Memory limit (MB) for sandboxed TeX processes |
